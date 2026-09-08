@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+
+# mine_sessions.py output. It is a redacted pile of candidates drawn from your
+# own Claude Code transcripts, and redacted is not the same as safe to publish:
+# it cannot recognise a customer. Keep it local, file the finished
+# VANTIQ-LEARNINGS-<you>.md in learnings/ instead.
+candidates.md
