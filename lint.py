@@ -707,6 +707,19 @@ def rule_bare_array_type(text, code, ctx):
         either define the type or remove the reference."
 
     `bareKeys Array` -> `bareKeys String Array` compiled.
+
+    NC-04 is the same trap in the RETURN position, found independently, and it
+    fails at binding rather than at parse:
+
+        "code": "io.vantiq.rulemgr.vail.referenced.resource.not.found",
+        "message": "The type 'Array' referenced by the procedure
+        'AlertService.findOpenAlerts' could not be found.  Please either define
+        the type or remove the reference."
+
+    `void` is not a keyword either and fails the same way; that reporter noted
+    it in the same session but did not capture the raw error, so it is named in
+    the message rather than claimed as separately evidenced. Dropping the
+    annotation entirely compiled clean, and `Object` works if one is wanted.
     """
     span = _param_span(code)
     if not span:
@@ -725,6 +738,152 @@ def rule_bare_array_type(text, code, ctx):
                 % (words[0], words[0]),
                 line_text(text, pos)))
         pos += len(part) + 1
+    ret = re.match(r"\s*:\s*(Array|void)\b", code[end + 1:])
+    if ret:
+        out.append(Finding(
+            "bare-array-type", line_of(text, end),
+            "`%s` is not a return-type keyword; it is looked up as an ordinary "
+            "type name, and binding fails with \"The type '%s' ... could not be "
+            "found\". Omit the return type, or use `Object`."
+            % (ret.group(1), ret.group(1)),
+            line_text(text, end)))
+    return out
+
+
+# What may legitimately follow the parameter list without a colon. `HIDDEN`
+# appears 12 times in the demo corpus and is a declaration modifier, not a
+# return type; without this allowlist `missing-return-colon` reports every one
+# of them.
+DECL_SUFFIX = ("HIDDEN", "WITH")
+
+
+def rule_missing_return_colon(text, code, ctx):
+    """A return type needs a leading colon: `(params): Type`, not `(params) Type`.
+
+    NC-01. The form without the colon is what the platform's own bundled
+    documentation shows, which is how it gets written, and the compiler answers
+    with an error carrying no line number and no clue:
+
+        {"error":"Errors found parsing VAIL text:",
+         "code":"com.accessg2.ag2rs.parse.errors"}
+
+    `validateVAIL` passes it with zero warnings (NC-09), so nothing upstream of
+    a real compile catches it. Of 1,477 typed declarations in the demo corpus,
+    every single one uses the colon.
+    """
+    span = _param_span(code)
+    if not span:
+        return []
+    end = span[1]
+    tail = code[end + 1:]
+    m = re.match(r"[ \t]*([A-Za-z_][\w.]*)", tail)
+    if not m or m.group(1).upper() in DECL_SUFFIX:
+        return []
+    return [Finding(
+        "missing-return-colon", line_of(text, end),
+        "return type `%s` needs a leading colon - `(...): %s`. Without it the "
+        "parser fails with a bare `com.accessg2.ag2rs.parse.errors` carrying no "
+        "line number, and validateVAIL reports nothing."
+        % (m.group(1), m.group(1)),
+        line_text(text, end))]
+
+
+def rule_end_terminator(text, code, ctx):
+    """A procedure body does not take a trailing `END`.
+
+    NC-01, from the same session. `END` is in the platform's bundled
+    documentation example and the real compiler rejects it, again with the
+    line-less `com.accessg2.ag2rs.parse.errors`. It does not appear once in the
+    1,757 .vail files this was swept against.
+    """
+    return [Finding("end-terminator", line_of(text, m.start()),
+                    "a trailing `END` does not terminate a VAIL procedure body "
+                    "and is a parse error; delete it.",
+                    line_text(text, m.start()))
+            for m in re.finditer(r"^[ \t]*END[ \t]*$", code, re.M)]
+
+
+def rule_public_modifier(text, code, ctx):
+    """`PUBLIC` is not a visibility modifier and breaks the parser.
+
+    NC-02, isolated cleanly: `PROCEDURE AlertService.pingTest(): String` was
+    created successfully, and changing ONLY that first line to
+    `PUBLIC PROCEDURE AlertService.pingTest2(): String` reproduced
+    `com.accessg2.ag2rs.parse.errors`. Procedures are callable by default; no
+    modifier is needed to expose one.
+
+    That entry adds "(and presumably `PRIVATE`)" in its title, and the
+    presumption is WRONG. `PRIVATE` appears on 820 procedures in the demo corpus
+    and works; this harness's `private-cross-service` check exists because the
+    platform enforces it. So this rule names `PUBLIC` only, and the guess about
+    `PRIVATE` is recorded here rather than acted on - it is the one part of an
+    otherwise cleanly-isolated entry that nobody watched fail.
+    """
+    return [Finding("public-modifier", line_of(text, m.start()),
+                    "`PUBLIC` is not a VAIL visibility modifier and is a parse "
+                    "error; procedures are callable by default, so remove it. "
+                    "(`PRIVATE` is real and unaffected.)",
+                    line_text(text, m.start()))
+            for m in re.finditer(r"^[ \t]*PUBLIC[ \t]+(?=(?:\w+[ \t]+)*PROCEDURE\b)",
+                                 code, re.M | re.I)]
+
+
+def rule_insert_object_literal(text, code, ctx):
+    """`INSERT {...} INTO Type` does not parse; the form is `INSERT Type(...)`.
+
+    NC-07. The object-literal shape is the one everybody reaches for and it
+    fails whether or not the result is assigned:
+
+        "code": "io.vantiq.vail.syntax.error",
+        "message": "'{' encountered when parsing VAIL name."
+
+    `INSERT Alert(sensorId: targetSensorId, ...)` compiled and ran. There is no
+    `RETURNING` clause, so to get the row back, follow with a separate
+    `SELECT ONE ... WHERE <natural key>`. The call form appears 157 times in the
+    demo corpus and the object-literal form never.
+    """
+    return [Finding("insert-object-literal", line_of(text, m.start()),
+                    "`INSERT {...} INTO Type` is a parse error (\"'{' "
+                    "encountered when parsing VAIL name\"); write "
+                    "`INSERT Type(field: value, ...)`.",
+                    line_text(text, m.start()))
+            for m in re.finditer(r"\bINSERT\s*\{", code, re.I)]
+
+
+def rule_when_alias(text, code, ctx):
+    """A rule's WHEN clause must bind its payload with `AS <name>`.
+
+    NC-05. The trigger payload is NOT implicitly called `event`, including for
+    `MESSAGE ARRIVES FROM`, whose documented example uses a bare `event.message`
+    and does not work:
+
+        "code": "io.vantiq.vail.syntax.error",
+        "message": "use of undeclared variable 'event'"
+
+    It compiles clean and previews with no lint warnings, then fails at bind.
+    Adding `AS event` to the WHEN, body otherwise unchanged, ran successfully.
+
+    Only fires when the body actually dereferences the unbound name, so a rule
+    that ignores its payload stays quiet.
+    """
+    if not _is_rule(code):
+        return []
+    out = []
+    for m in re.finditer(r"^[ \t]*WHEN\b[^\n]*$", code, re.M | re.I):
+        clause = m.group(0)
+        alias = re.search(r"\bAS\s+(\w+)", clause, re.I)
+        if alias:
+            continue
+        body = code[m.end():]
+        used = re.search(r"(?<![\w.])event\s*\.", body)
+        if not used:
+            continue
+        out.append(Finding(
+            "when-alias", line_of(text, m.start()),
+            "this WHEN binds no payload alias but the body reads `event.`; the "
+            "payload is not implicitly named `event` and this fails at bind "
+            "with \"use of undeclared variable 'event'\". Add `AS event`.",
+            line_text(text, m.start())))
     return out
 
 
@@ -1060,7 +1219,9 @@ RULES = [rule_package, rule_declared_name,
          rule_missing_builtin,
          rule_exception_placeholder,
          rule_where_method_call, rule_dollar_operator_collapse,
-         rule_dynamic_source]
+         rule_dynamic_source,
+         rule_missing_return_colon, rule_end_terminator, rule_public_modifier,
+         rule_insert_object_literal, rule_when_alias]
 
 
 # ------------------------------------------------------------ cross-file ----

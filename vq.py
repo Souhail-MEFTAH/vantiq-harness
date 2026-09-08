@@ -200,7 +200,7 @@ def cmd_package(dest):
     it refuses rather than writing a truncated file, which is right here and
     unhelpful in a copy.
 
-    NOTES.md itself ships, because the 213 recorded behaviours are the most
+    NOTES.md itself ships, because the 224 recorded behaviours are the most
     portable thing here, and so does learnings/, because every rule taken from
     the pooled corpus cites an entry id and the recipient needs to be able to
     read the entry.
@@ -223,7 +223,7 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 82 cases, proves the rules hold")
+    print("  python vq.py selftest              # 119 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder holding a .mcp.json")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")

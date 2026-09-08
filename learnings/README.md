@@ -9,6 +9,7 @@ reconciled them; the shape is fixed so they merge without anyone having to.
 | `VANTIQ-LEARNINGS-DM.md` | 62 | `DM-nn` | connectors, Python sources, k8s install and upgrade |
 | `VANTIQ-LEARNINGS-NR.md` | 54 | `NR-nn` | VAIL semantics, REST and MCP shapes, GenAI flows |
 | `VANTIQ-LEARNINGS-PS.md` | 24 | `PS-nn` | service interfaces, scheduled events, EDA wiring |
+| `VANTIQ-LEARNINGS-NC.md` | 11 | `NC-nn` | VAIL grammar the bundled docs get wrong |
 
 Files are named for the id prefix their entries use rather than for their
 author. That is deliberate for a public repository: the people who wrote these

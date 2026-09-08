@@ -165,6 +165,42 @@ def _path_trap(path, method="GET"):
     return None
 
 
+def body_trap(resource, body):
+    """The reason this create body is wrong, or None.
+
+    Two shapes that are rejected on save, both of which cascade: the create
+    fails, and every later step that assumed the resource exists fails too, so
+    one root cause is reported as five failures somewhere else.
+
+      NC-11: `system.projects` has no `description`, unlike most resources.
+      "The property: system.projects.description is not defined." was followed
+      by five "The requested instance ('{name=<ProjectName>}') of the projects
+      resource could not be found." errors on the dependent attach calls.
+
+      NC-06: a Visual Event Handler's owning package must be a COMPOUND name.
+      "The package name 'TemperatureMonitor' is a simple name.  Packages must be
+      compound names with at least one package separator ('.')." Note this is
+      the opposite of the PROCEDURE header constraint in NC-03, where the short
+      undotted service name is the one that parses - the two resource kinds
+      cannot be reasoned about with one rule about dots.
+    """
+    if not isinstance(body, dict):
+        return None
+    head = resource.strip("/").split("/")[0]
+    if head == "projects" and "description" in body:
+        return ("`system.projects` defines no `description` property; the create "
+                "is rejected and every later step that attaches to this project "
+                "then reports the project missing.")
+    if head == "collaborationtypes" and body.get("isEventHandler"):
+        pkg = body.get("packageName") or body.get("package") or ""
+        name = body.get("name") or ""
+        owner = pkg or name.rsplit(".", 1)[0] if "." in name else pkg
+        if not owner or "." not in owner:
+            return ("a Visual Event Handler's package must be a compound name "
+                    "with at least one `.`; a simple name is rejected on save.")
+    return None
+
+
 def _modal(values):
     """The most common non-empty value, or None.
 
@@ -203,6 +239,10 @@ class Client(object):
             trap = _path_trap(path, method)
             if trap:
                 raise VantiqError("%s %s: %s" % (method, path, trap))
+            if method == "POST":
+                trap = body_trap(path, body)
+                if trap:
+                    raise VantiqError("%s %s: %s" % (method, path, trap))
         url = self.server + ("/api/v1/resources/" if api else "/") + path.lstrip("/")
         if query:
             url += "?" + urllib.parse.urlencode(query)

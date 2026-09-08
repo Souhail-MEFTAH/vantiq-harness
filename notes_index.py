@@ -145,6 +145,15 @@ POOLED_COVERAGE = {
     "PS-14": ("opscheck", "scheduled_faults"),
     "PS-15": ("opscheck", "service_schedule_faults"),
     "PS-16": ("opscheck", "dead_schedules"),
+    "NC-01": ("lint", "missing-return-colon + end-terminator"),
+    "NC-02": ("lint", "public-modifier"),
+    "NC-04": ("lint", "bare-array-type"),
+    "NC-05": ("lint", "when-alias"),
+    "NC-07": ("lint", "insert-object-literal"),
+    "NC-06": ("client", "body_trap"),
+    "NC-08": ("client", "strip_server_fields"),
+    "NC-11": ("client", "body_trap"),
+    "NC-09": ("push", "vailErrors is the gate, not validateVAIL"),
     # --- uilint -------------------------------------------------------------
     "NR-20": ("uilint", "topic-subscription"),
     "PS-22": ("uilint", "topic-subscription"),
@@ -179,6 +188,8 @@ POOLED_COVERAGE = {
     "DM-35": ("convention", "a deploy deletes what the target has and the source does not"),
     "DM-36": ("convention", "the connector script is a document, not a file on the host"),
     "DM-37": ("convention", "client event subscriptions are IDE-only"),
+    "NC-03": ("convention", "retry a PROCEDURE header with the short service name"),
+    "NC-10": ("convention", "restart before trusting a subagent's MCP tool list"),
 }
 
 

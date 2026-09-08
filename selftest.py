@@ -551,6 +551,104 @@ return ids
 """, "arrow-lambda", False))
 
 
+# ---------------------------------------------------------------------------
+# NC, added 2026-09. A fourth audit, weighted toward what the platform's own
+# bundled documentation shows that the real compiler then rejects. Every claim
+# below was checked against the 1,757-file corpus before it became a rule:
+# `END` 0 occurrences, `PUBLIC` 0, `INSERT {` 0, colon-less return types 0.
+# ---------------------------------------------------------------------------
+
+# --- NC-01: the colon, and the END ------------------------------------------
+NO_COLON = ("package com.atlas.health\n\n"
+            "STATELESS PROCEDURE Svc.thing(id String) Object\n\n")
+CASES.append(("return type with no colon", """
+return {}
+""", "missing-return-colon", True, "Svc.thing", NO_COLON))
+
+CASES.append(("return type with a colon", """
+return {}
+""", "missing-return-colon", False))
+
+# `HIDDEN` is a declaration modifier, not a return type. 12 in the corpus.
+HIDDEN_DECL = ("package com.atlas.health\n\n"
+               "PROCEDURE Svc.thing(id String) HIDDEN WITH ars_dependentResource=true\n\n")
+CASES.append(("HIDDEN after the params is not a return type", """
+return {}
+""", "missing-return-colon", False, "Svc.thing", HIDDEN_DECL))
+
+CASES.append(("a trailing END terminator", """
+var found = 1
+return found
+END
+""", "end-terminator", True))
+
+CASES.append(("no END terminator", """
+var found = 1
+return found
+""", "end-terminator", False))
+
+# --- NC-02: PUBLIC is not a modifier, PRIVATE is ----------------------------
+PUBLIC_DECL = ("package com.atlas.health\n\n"
+               "PUBLIC PROCEDURE Svc.thing(): String\n\n")
+CASES.append(("PUBLIC as a visibility modifier", """
+return "pong"
+""", "public-modifier", True, "Svc.thing", PUBLIC_DECL))
+
+# NC-02 guesses PRIVATE fails too. It does not: 820 uses in the demo corpus,
+# and private-cross-service exists because the platform enforces it.
+PRIVATE_DECL = ("package com.atlas.health\n\n"
+                "PRIVATE STATELESS PROCEDURE Svc.thing(): String\n\n")
+CASES.append(("PRIVATE is NOT flagged (820 uses in shipping code)", """
+return "pong"
+""", "public-modifier", False, "Svc.thing", PRIVATE_DECL))
+
+# --- NC-04: Array and void in the return position ---------------------------
+RET_ARRAY = ("package com.atlas.health\n\n"
+             "STATELESS PROCEDURE Svc.thing(): Array\n\n")
+CASES.append(("Array as a return type", """
+return []
+""", "bare-array-type", True, "Svc.thing", RET_ARRAY))
+
+RET_OBJECT = ("package com.atlas.health\n\n"
+              "STATELESS PROCEDURE Svc.thing(): Object\n\n")
+CASES.append(("Object as a return type is fine", """
+return []
+""", "bare-array-type", False, "Svc.thing", RET_OBJECT))
+
+# --- NC-07: the INSERT object literal ---------------------------------------
+CASES.append(("INSERT with an object literal", """
+INSERT {sensorId: targetSensorId, status: "open"} INTO com.atlas.health.Alert
+return true
+""", "insert-object-literal", True))
+
+CASES.append(("INSERT in the call form", """
+INSERT com.atlas.health.Alert(sensorId: targetSensorId, status: "open")
+return true
+""", "insert-object-literal", False))
+
+# --- NC-05: the WHEN payload is not implicitly `event` ----------------------
+CASES.append(("a WHEN with no alias whose body reads event.", """
+RULE IngestTemperatureReading
+WHEN MESSAGE ARRIVES FROM TemperatureSensorSource
+
+var payload = event.message
+""", "when-alias", True, None, RULE_HEAD))
+
+CASES.append(("the same WHEN with AS event", """
+RULE IngestTemperatureReading
+WHEN MESSAGE ARRIVES FROM TemperatureSensorSource AS event
+
+var payload = event.message
+""", "when-alias", False, None, RULE_HEAD))
+
+CASES.append(("a rule that never dereferences the payload", """
+RULE Heartbeat
+WHEN MESSAGE ARRIVES FROM TemperatureSensorSource
+
+var n = 1
+""", "when-alias", False, None, RULE_HEAD))
+
+
 def blanking_cases():
     """The two incidents that motivated source.blank, as direct assertions."""
     out = []
@@ -676,6 +774,24 @@ def client_cases():
     # NR-48: the listing carries inherited records.
     out.append(("the owning namespace is the modal one",
                 _modal(["ours", "ours", "inherited", None]) == "ours"))
+
+    # NC-11: system.projects has no description, and the failure cascades.
+    from client import body_trap
+    out.append(("a project created with a description is refused",
+                bool(body_trap("projects", {"name": "P", "description": "x"}))))
+    out.append(("a project with no description is allowed",
+                not body_trap("projects", {"name": "P"})))
+
+    # NC-06: a VEH package must be compound. The opposite of NC-03's advice for
+    # PROCEDURE headers, which is why both are spelled out.
+    out.append(("a VEH on a simple package name is refused",
+                bool(body_trap("collaborationtypes",
+                               {"name": "TemperatureMonitor",
+                                "isEventHandler": True}))))
+    out.append(("a VEH on a compound package name is allowed",
+                not body_trap("collaborationtypes",
+                              {"name": "com.example.TemperatureMonitor",
+                               "isEventHandler": True})))
     return out
 
 

@@ -1,11 +1,11 @@
 # vantiq-harness
 
 Tooling for building on Vantiq, assembled from what seven flagship demos cost us
-to learn, and from what three professional-services developers found when they
+to learn, and from what four professional-services developers found when they
 audited their own session history for the same thing.
 
-**213 recorded behaviours, 69 of them enforced by a check.** See `NOTES.md`,
-which is generated and lists the other 144 honestly rather than implying
+**224 recorded behaviours, 78 of them enforced by a check.** See `NOTES.md`,
+which is generated and lists the other 146 honestly rather than implying
 coverage.
 
 > Not an official Vantiq release, and not endorsed by or affiliated with Vantiq
@@ -37,12 +37,12 @@ The harness exists to replace that 200 with a real answer.
 | Module | What it does |
 |---|---|
 | `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
-| `lint.py` | 24 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
+| `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
 | `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
 | `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 82 cases. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 119 assertions. |
 | `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. |
 | `learnings/` | The pooled corpus: one file per developer, produced with `EXTRACT-LEARNINGS.md`. |
 | `sync.py` | Vendors the harness into each demo's `tools/vharness`. |
@@ -50,7 +50,7 @@ The harness exists to replace that 200 with a real answer.
 ## Use
 
 ```bash
-python selftest.py                      # 82 cases, run this after any rule change
+python selftest.py                      # 119 assertions, run after any rule change
 python notes_index.py                   # regenerate NOTES.md
 python push.py "<repo>" com.example.app # the full pipeline
 python sync.py                          # vendor into every demo
@@ -105,8 +105,8 @@ codebase you did not write.**
 
 `learnings/` holds one file per developer, each produced independently by
 running the prompt in `EXTRACT-LEARNINGS.md` over their own Claude Code history.
-140 entries arrived that way in September 2026. About a fifth were checkable,
-which is the ratio that file predicts.
+151 entries arrived that way in September 2026 across four files. About a
+third proved checkable, better than the ratio that file predicts.
 
 Three of them did not survive being made into rules, and the way each died is
 worth more than the entry was:
@@ -151,7 +151,7 @@ Vantiq namespaces it did not own, self-test passing and lint clean.
 **What is deliberately left behind.** `sync.py` knows one team's seven demo
 folders. Half of `notes_index.py` regenerates `NOTES.md` from documents nobody
 else has, and refuses rather than writing a truncated file. `NOTES.md` itself
-ships, because the 213 recorded behaviours are the most portable thing here, and
+ships, because the 224 recorded behaviours are the most portable thing here, and
 so does `learnings/`, which regenerates anywhere.
 
 **Adding your own.** Run the prompt in `EXTRACT-LEARNINGS.md` over your own
