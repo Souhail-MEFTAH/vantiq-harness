@@ -42,25 +42,94 @@ The harness exists to replace that 200 with a real answer.
 | `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 119 assertions. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 125 assertions. |
 | `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. |
 | `learnings/` | The pooled corpus: one file per developer, produced with `EXTRACT-LEARNINGS.md`. |
 | `sync.py` | Vendors the harness into each demo's `tools/vharness`. |
 
-## Use
+## How to use it
+
+Four steps, in this order. Each is useful on its own, so stop wherever it stops
+paying.
+
+### 1. Read `NOTES.md`. Install nothing.
+
+224 behaviours, each with the error text that earned it. This is the highest
+value per minute in the repo and it costs one browser tab. Most of what it
+records is not something a linter can catch - it is the afternoon you would
+otherwise spend finding out why a rule that compiles never fires.
+
+If you only ever do this, the harness has paid for itself.
+
+### 2. Point `check` at a namespace you already have. It only reads.
 
 ```bash
-python selftest.py                      # 119 assertions, run after any rule change
-python notes_index.py                   # regenerate NOTES.md
-python push.py "<repo>" com.example.app # the full pipeline
-python sync.py                          # vendor into every demo
+python vq.py check <project>
 ```
 
-Most Vantiq projects have no local VAIL. Of the projects on this machine, one
-keeps `src/procedures/` and at least three others are built directly in the
-namespace through the MCP server, with 527, 657 and 501 procedures and not a
-single `.vail` file. `check_namespace(client, package)` lints what is deployed,
-which is the common case:
+`<project>` is any folder holding a `.mcp.json` with a Vantiq server entry -
+what the MCP integration already writes. No writes, no config, no arguments:
+the application package is discovered from the namespace itself.
+
+Most Vantiq projects have **no local VAIL at all** - three on the machine this
+was built from hold 527, 657 and 501 procedures and not one `.vail` file - so by
+default this lints what is *deployed*. If a `src/procedures/` tree exists it
+lints that instead, and it understands both the hand-maintained layout and the
+Vantiq exporter's.
+
+Expect a handful of findings on a healthy project, not hundreds. **If you get
+hundreds, that is a bug in this tool rather than a verdict on your namespace** -
+please open an issue, because that is exactly how the last 94% of false
+positives were found.
+
+### 3. Before a demo, ask what is quietly broken and what it costs.
+
+```bash
+python vq.py health <project>
+```
+
+```bash
+python vq.py ops <project>
+```
+
+`health` reports compile state at the procedure *and* service level, because a
+procedure reading `vailErrors: null` on a service that declares an interface
+proves nothing. `ops` measures what an idle browser tab costs per day and lists
+what is scheduled - including scheduled events firing into a topic nothing
+subscribes to, which is the failure that reads as healthy.
+
+### 4. Only if you write VAIL locally: push through the gates.
+
+```bash
+python vq.py push <project> com.example.app
+```
+
+lint, snapshot, drift, push, interface, `vailErrors` at both levels, smoke. It
+refuses to write if the lint fails or a signature has drifted from the deployed
+interface. `allow_drift=True` is for updating the interface in the same push,
+and nothing else.
+
+### Contributing what you learned
+
+```bash
+python mine_sessions.py --out candidates.md
+```
+
+Walks your own Claude Code history and produces a redacted pile of candidates;
+then follow the prompt in `EXTRACT-LEARNINGS.md`. **Read the credential census
+it prints and rotate anything live** - the report is redacted, your transcripts
+are not. Drop the result in `learnings/` and re-run `notes_index.py`.
+
+Four people have done this so far, and the fourth still found five things the
+first three had missed.
+
+### Running the tool on itself
+
+```bash
+python selftest.py                      # 125 assertions, run after any rule change
+python notes_index.py                   # regenerate NOTES.md
+python vq.py install <project>          # vendor into a project's tools/vharness
+```
 
 ```python
 from client import Client
@@ -68,9 +137,6 @@ from lint import check_namespace
 check_namespace(Client(repo="<project>"), "com.example.app")
 ```
 
-`push.py` refuses to write if the lint fails or if a signature has drifted from
-the deployed interface. `allow_drift=True` is for the case where the interface is
-being updated in the same push, and nothing else.
 
 ## Two rules about the rules
 

@@ -517,10 +517,17 @@ def rule_declared_name(text, code, ctx):
         if _is_rule(code):
             return []
         return [Finding("no-signature", 1, "no PROCEDURE declaration found")]
-    if expect and m.group(1) != expect:
-        return [Finding("name-mismatch", line_of(text, m.start()),
-                        "declares `%s` but its path says `%s`" % (m.group(1), expect))]
-    return []
+    if not expect:
+        return []
+    # `expect` may be SEVERAL readings of the same path, because there is more
+    # than one layout in the wild and a file is fine if it matches any of them.
+    # See _expected_names.
+    wanted = (expect,) if isinstance(expect, str) else tuple(expect)
+    if m.group(1) in wanted:
+        return []
+    return [Finding("name-mismatch", line_of(text, m.start()),
+                    "declares `%s` but its path says `%s`"
+                    % (m.group(1), " or ".join("`%s`" % w for w in wanted)))]
 
 
 def rule_package(text, code, ctx):
@@ -528,10 +535,17 @@ def rule_package(text, code, ctx):
 
     Skipped for rule text, where the opposite is true and `rule_topic_package`
     is the check that applies.
+
+    CASE-INSENSITIVE, and that is not a detail. This rule was written to match
+    `package` exactly while `SIG` above already carried a long comment about
+    VAIL keywords appearing in either case - the platform's own exporter writes
+    `PACKAGE com.example.app` in every generated file. The mismatch reported 67
+    files as having no package declaration when all 67 declared one, which is
+    the same lesson SIG paid 26 findings for and this rule did not inherit.
     """
     if _is_rule(code):
         return []
-    if not re.search(r"^\s*package\s+[\w.]+", code, re.M):
+    if not re.search(r"^\s*package\s+[\w.]+", code, re.M | re.I):
         return [Finding("no-package", 1, "no package declaration")]
     return []
 
@@ -1387,6 +1401,41 @@ def check_namespace(client, package):
     return results
 
 
+# Files the platform wrote and nobody can edit. `check_namespace` already skips
+# these by `ars_createdBy == "system"`; a source tree has no such field, so the
+# banner the exporter puts at the top is what identifies them. Linting code
+# nobody can change is noise by definition.
+GENERATED = re.compile(r"GENERATED\s*--?\s*DO NOT EDIT", re.I)
+
+
+def _expected_names(dirpath, filename):
+    """Every name this path could legitimately declare.
+
+    There are two layouts in the wild and only one of them was supported, which
+    made `check_tree` unusable on the common case:
+
+      hand-maintained   src/procedures/<Service>/<operation>.vail
+      Vantiq export     procedures/<pkg>/<dirs>/<Service>_<operation>.vail
+
+    The exporter writes the second. Against seven demos, assuming only the first
+    produced 407 name-mismatch findings and every single one was this - a rule
+    reporting that the platform's own export format is wrong. A file is correct
+    if it matches EITHER reading, so both are returned.
+    """
+    short = filename[:-5]
+    svc = os.path.basename(dirpath)
+    names = []
+    if svc == "_package":
+        names.append(short)
+    else:
+        names.append("%s.%s" % (svc, short))
+    if "_" in short:
+        # <Service>_<operation> -> Service.operation, first underscore only:
+        # operations themselves contain underscores (a2a_dispatchPlan).
+        names.append(short.replace("_", ".", 1))
+    return tuple(dict.fromkeys(names))
+
+
 def check_tree(root):
     """Every .vail under root. Returns {path: [Finding]}."""
     files, results = {}, {}
@@ -1397,11 +1446,10 @@ def check_tree(root):
             path = os.path.join(dirpath, fn)
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
+            if GENERATED.search(text[:400]):
+                continue
             files[path] = text
-            svc = os.path.basename(dirpath)
-            short = fn[:-5]
-            expect = short if svc == "_package" else "%s.%s" % (svc, short)
-            found = check_text(text, expect)
+            found = check_text(text, _expected_names(dirpath, fn))
             if found:
                 results[path] = found
     for path, finding in cross_file(files):

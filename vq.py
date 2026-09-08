@@ -223,7 +223,7 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 119 assertions, proves the rules hold")
+    print("  python vq.py selftest              # 125 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder holding a .mcp.json")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")

@@ -6,6 +6,8 @@ with the near-miss that must stay quiet.
 
 Run: python selftest.py
 """
+import io
+import os
 import sys
 
 from lint import check_text, cross_file
@@ -846,6 +848,70 @@ def ui_cases():
     return out
 
 
+def tree_cases():
+    """check_tree against the layouts that actually exist on disk.
+
+    These are not hypothetical. Run over seven demos, check_tree reported 520
+    findings and 474 of them - 91% - were its own assumptions: 407 name
+    mismatches because only one directory layout was supported, and 67 missing
+    package declarations because the rule matched `package` case-sensitively
+    while the platform's exporter writes `PACKAGE`. After these, 32.
+    """
+    import shutil
+    import tempfile
+    from lint import check_tree
+    root = tempfile.mkdtemp()
+    try:
+        def w(rel, body):
+            p = os.path.join(root, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            io.open(p, "w", encoding="utf-8").write(body)
+            return p
+
+        # Layout A, hand-maintained: <Service>/<operation>.vail
+        w("src/procedures/BedCapacityAgent/placePatient.vail",
+          "package com.atlas.health\n\n"
+          "stateless PROCEDURE BedCapacityAgent.placePatient(): Object\n\nreturn {}\n")
+        # Layout B, the Vantiq exporter: <pkg dirs>/<Service>_<operation>.vail
+        w("export/procedures/com/atlas/health/BedCapacityAgent_findBed.vail",
+          "PACKAGE com.atlas.health\n\n"
+          "stateless PROCEDURE BedCapacityAgent.findBed(): Object\n\nreturn {}\n")
+        # Layout B with an underscore in the OPERATION as well.
+        w("export/procedures/com/atlas/health/IsrAgent_a2a_dispatchPlan.vail",
+          "PACKAGE com.atlas.health\n\n"
+          "PRIVATE STATELESS PROCEDURE IsrAgent.a2a_dispatchPlan(): Object\n\nreturn {}\n")
+        # Genuinely wrong: declares something neither reading allows.
+        w("src/procedures/BedCapacityAgent/relieveCapacity.vail",
+          "package com.atlas.health\n\n"
+          "stateless PROCEDURE SomethingElse.notThis(): Object\n\nreturn {}\n")
+        # Platform-generated: nobody can edit it, so it is not linted.
+        w("export/procedures/com/atlas/health/Agent_a2a_bridge.vail",
+          "PACKAGE com.atlas.health\n\n"
+          "/**\n * GENERATED -- DO NOT EDIT\n */\n"
+          "PRIVATE STATELESS PROCEDURE WrongName.whatever(): Object\n\nreturn {}\n")
+
+        res = check_tree(root)
+        rules = dict((os.path.basename(p), [f.rule for f in fs])
+                     for p, fs in res.items())
+        out = [
+            ("layout A: <Service>/<operation>.vail is accepted",
+             "placePatient.vail" not in rules),
+            ("layout B: the Vantiq export layout is accepted",
+             "BedCapacityAgent_findBed.vail" not in rules),
+            ("layout B: an underscore in the operation still resolves",
+             "IsrAgent_a2a_dispatchPlan.vail" not in rules),
+            ("uppercase PACKAGE counts as a package declaration",
+             not any("no-package" in v for v in rules.values())),
+            ("a name matching NEITHER layout is still flagged",
+             "name-mismatch" in rules.get("relieveCapacity.vail", [])),
+            ("a GENERATED -- DO NOT EDIT file is not linted at all",
+             "Agent_a2a_bridge.vail" not in rules),
+        ]
+        return out
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main():
     failures = 0
     print("rule cases")
@@ -874,7 +940,8 @@ def main():
             failures += 1
         print("  %s %s" % ("ok  " if ok else "FAIL", name))
 
-    for label, fn in (("REST traps", client_cases),
+    for label, fn in (("tree layouts", tree_cases),
+                      ("REST traps", client_cases),
                       ("scheduled events", ops_cases),
                       ("console", ui_cases)):
         print("\n%s" % label)
