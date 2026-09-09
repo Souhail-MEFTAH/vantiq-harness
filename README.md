@@ -16,6 +16,31 @@ coverage.
 > entry marked `unverified` means its author could not point at the failure.
 > Nothing here is customer data; see `learnings/README.md` on redaction.
 
+## Start here
+
+**New Vantiq project, first session.** Two commands, once:
+
+```bash
+python vq.py init /path/to/my-vantiq-project
+```
+
+```bash
+cd /path/to/my-vantiq-project && claude
+```
+
+`init` vendors the harness into `tools/vharness` **and** writes the `CLAUDE.md`
+section that tells Claude it exists. Claude Code reads that on the first turn,
+so the doctrine is in context before you type anything — you never have to
+remember to mention it.
+
+The only prerequisite is a `.mcp.json` in the project holding a Vantiq server
+entry, which the MCP integration already writes. If it is missing, `init` says
+so and explains what one is.
+
+**Already have a project and just want to look?** `NOTES.md` needs no install
+at all, and `python vq.py check <project>` only reads. Full walkthrough in
+[How to use it](#how-to-use-it).
+
 ## The problem it exists for
 
 Almost every hour lost on this platform had one shape: **the write returns HTTP
@@ -32,46 +57,35 @@ Almost every hour lost on this platform had one shape: **the write returns HTTP
 
 The harness exists to replace that 200 with a real answer.
 
-## Layers
-
-| Module | What it does |
-|---|---|
-| `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
-| `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
-| `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
-| `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
-| `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
-| `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 125 assertions. |
-| `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. |
-| `learnings/` | The pooled corpus: one file per developer, produced with `EXTRACT-LEARNINGS.md`. |
-| `sync.py` | Vendors the harness into each demo's `tools/vharness`. |
-
 ## How to use it
 
-Five steps, in this order. Each is useful on its own, so stop wherever it stops
+In this order. Each step is useful on its own, so stop wherever it stops
 paying.
 
-### 0. Starting a new project? One command.
+### 1. Set the project up so Claude knows the harness is there.
 
 ```bash
 python vq.py init <project>
 ```
 
-Vendors the harness into `<project>/tools/vharness` **and** writes the
-`CLAUDE.md` section that tells Claude it exists. Both halves matter: a harness
-Claude has not been told about does not get used - it re-derives the same checks
-badly, or trusts a 200. Re-run it after an upgrade; the section sits between
-markers and is replaced rather than stacked, and an existing `CLAUDE.md` is
-appended to, never overwritten.
+Both halves of that matter. Copying the files is the easy one; a harness Claude
+has not been *told* about does not get used, and instead re-derives the same
+checks badly or trusts a 200.
 
-Then start Claude Code in that folder. The `CLAUDE.md` is picked up
-automatically on the first turn.
+What lands in your `CLAUDE.md`, so you know before you run it: the four
+commands, a pointer to `NOTES.md`, and one paragraph of doctrine. Deliberately
+short — a `CLAUDE.md` listing every trap gets skimmed and ignored, and the traps
+belong in `NOTES.md` where each carries the error text that earned it. What has
+to be in context from the first turn is the habit, not the lookup table.
 
-If you only want the files and will wire up context yourself, `vq.py install`
-does that half alone.
+Safe to re-run, which you will after every upgrade: the section sits between
+`<!-- vantiq-harness:begin -->` markers and is replaced rather than stacked, and
+an existing `CLAUDE.md` is appended to, never overwritten.
 
-### 1. Read `NOTES.md`. Install nothing.
+`vq.py install` does the files-only half, if you would rather wire up context
+yourself.
+
+### 2. Read `NOTES.md`. Install nothing.
 
 224 behaviours, each with the error text that earned it. This is the highest
 value per minute in the repo and it costs one browser tab. Most of what it
@@ -80,7 +94,7 @@ otherwise spend finding out why a rule that compiles never fires.
 
 If you only ever do this, the harness has paid for itself.
 
-### 2. Point `check` at a namespace you already have. It only reads.
+### 3. Point `check` at a namespace you already have. It only reads.
 
 ```bash
 python vq.py check <project>
@@ -101,7 +115,7 @@ hundreds, that is a bug in this tool rather than a verdict on your namespace** -
 please open an issue, because that is exactly how the last 94% of false
 positives were found.
 
-### 3. Before a demo, ask what is quietly broken and what it costs.
+### 4. Before a demo, ask what is quietly broken and what it costs.
 
 ```bash
 python vq.py health <project>
@@ -117,7 +131,7 @@ proves nothing. `ops` measures what an idle browser tab costs per day and lists
 what is scheduled - including scheduled events firing into a topic nothing
 subscribes to, which is the failure that reads as healthy.
 
-### 4. Only if you write VAIL locally: push through the gates.
+### 5. Only if you write VAIL locally: push through the gates.
 
 ```bash
 python vq.py push <project> com.example.app
@@ -156,6 +170,21 @@ from lint import check_namespace
 check_namespace(Client(repo="<project>"), "com.example.app")
 ```
 
+
+## What each module does
+
+| Module | What it does |
+|---|---|
+| `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
+| `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
+| `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
+| `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
+| `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
+| `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 125 assertions. |
+| `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. |
+| `learnings/` | The pooled corpus: one file per developer, produced with `EXTRACT-LEARNINGS.md`. |
+| `sync.py` | Vendors the harness into each demo's `tools/vharness`. |
 
 ## Two rules about the rules
 
@@ -224,7 +253,7 @@ entry is one developer's afternoon; the sweep is everyone else's.
 python vq.py package <dest>
 ```
 
-Ten files. **Python 3.6 or later and nothing else** — no third-party packages,
+Twelve files plus `learnings/`. **Python 3.6 or later and nothing else** — no third-party packages,
 standard library only. The recipient needs a project folder containing a
 `.mcp.json` with a Vantiq server entry, which is what the MCP integration
 already writes. Nothing is hardcoded to a namespace, a server or a package:
@@ -257,7 +286,7 @@ down gets deleted the first time it is inconvenient.
 ## What it does not do
 
 - It does not check anything about the runtime behaviour of your agents.
-- Roughly 16 of the recorded learnings are conventions that cannot be detected
-  statically, and 28 more have not been triaged. `NOTES.md` lists both honestly
-  rather than implying coverage.
+- Of the 224 recorded behaviours, 41 are conventions that cannot be detected
+  statically and 105 more have not been triaged. `NOTES.md` lists both honestly
+  rather than implying coverage: 78 enforced is a third of them, not most.
 - `opscheck` measures; it does not tune. The levers are a judgement call.
