@@ -49,8 +49,27 @@ The harness exists to replace that 200 with a real answer.
 
 ## How to use it
 
-Four steps, in this order. Each is useful on its own, so stop wherever it stops
+Five steps, in this order. Each is useful on its own, so stop wherever it stops
 paying.
+
+### 0. Starting a new project? One command.
+
+```bash
+python vq.py init <project>
+```
+
+Vendors the harness into `<project>/tools/vharness` **and** writes the
+`CLAUDE.md` section that tells Claude it exists. Both halves matter: a harness
+Claude has not been told about does not get used - it re-derives the same checks
+badly, or trusts a 200. Re-run it after an upgrade; the section sits between
+markers and is replaced rather than stacked, and an existing `CLAUDE.md` is
+appended to, never overwritten.
+
+Then start Claude Code in that folder. The `CLAUDE.md` is picked up
+automatically on the first turn.
+
+If you only want the files and will wire up context yourself, `vq.py install`
+does that half alone.
 
 ### 1. Read `NOTES.md`. Install nothing.
 

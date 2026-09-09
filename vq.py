@@ -6,7 +6,8 @@
     python vq.py ops     <project> <package> [ReadModel ...]
     python vq.py health  <project> [package]   compile state, both levels
     python vq.py selftest                      prove the rules still hold
-    python vq.py install <project>             copy the harness into a project
+    python vq.py init    <project>             START HERE on a new project
+    python vq.py install <project>             copy the files only, no CLAUDE.md
     python vq.py package <dest>                a clean copy to hand to someone else
 
 `<project>` is a folder holding a .mcp.json. The package is discovered from the
@@ -175,6 +176,110 @@ def _copy_learnings(dest):
     return n
 
 
+# What a Vantiq project's CLAUDE.md needs to say. Written into the project by
+# `vq.py init`, between markers so a re-run replaces it instead of stacking.
+#
+# Deliberately SHORT. A CLAUDE.md that lists every trap gets skimmed and then
+# ignored, and the traps are in NOTES.md where they belong, each with the error
+# text that earned it. What has to be in context from the first turn is the
+# doctrine, because it is the thing that changes how you work rather than
+# something you look up once you are already stuck.
+MARK_BEGIN = "<!-- vantiq-harness:begin -->"
+MARK_END = "<!-- vantiq-harness:end -->"
+
+CLAUDE_SECTION = """%s
+## Working on this Vantiq project
+
+There is a build harness at `tools/vharness`. Use it rather than rebuilding its
+checks:
+
+```
+python tools/vharness/vq.py check  .            lint what is deployed (read-only)
+python tools/vharness/vq.py health .            compile state, procedure AND service
+python tools/vharness/vq.py ops    .            what a screen costs per day
+python tools/vharness/vq.py push   . <package>  push with every gate
+```
+
+`tools/vharness/NOTES.md` records %d platform behaviours, each with the error
+text that earned it. Read it before debugging something that "should work":
+most of them are not things a linter can catch, and roughly two thirds have no
+check at all.
+
+**The one thing to carry into any Vantiq work:** a write returns HTTP 200 and
+the thing can still be broken, somewhere else or later. A clean push does not
+mean the service compiles; `vailErrors: null` on a procedure does not mean its
+service is healthy; and only calling a procedure proves the class assembled.
+Verify by read-back and by execution, never by a status code.
+%s
+""" % (MARK_BEGIN, 224, MARK_END)
+
+
+def _behaviour_count():
+    """How many behaviours NOTES.md actually records, so the text cannot drift."""
+    notes = os.path.join(HERE, "NOTES.md")
+    if not os.path.exists(notes):
+        return None
+    import io as _io
+    import re as _re
+    text = _io.open(notes, encoding="utf-8", errors="replace").read()
+    m = _re.search(r"^\| recorded learnings \|(.+)\|\s*$", text, _re.M)
+    if not m:
+        return None
+    cells = [c.strip() for c in m.group(1).split("|") if c.strip().isdigit()]
+    return int(cells[-1]) if cells else None
+
+
+def cmd_init(project):
+    """Set a project up so Claude knows the harness exists. Start here.
+
+    `install` copies the files; that is necessary and not sufficient. A harness
+    Claude has not been told about does not get used - it re-derives the same
+    checks badly, or trusts a 200. This writes the CLAUDE.md section that puts
+    the doctrine in context from the first turn, and is idempotent so it can be
+    re-run after an upgrade.
+    """
+    import io as _io
+    if not os.path.exists(os.path.join(project, ".mcp.json")):
+        print("warning: no .mcp.json in %s" % project)
+        print("  A Vantiq project is a folder holding a .mcp.json with a Vantiq")
+        print("  server entry, which the MCP integration writes. Set that up")
+        print("  first, or `check`/`health`/`push` will have nothing to talk to.")
+        print("")
+
+    cmd_install(project)
+
+    count = _behaviour_count()
+    section = CLAUDE_SECTION
+    if count and count != 224:
+        section = section.replace("records 224 platform", "records %d platform" % count)
+
+    path = os.path.join(project, "CLAUDE.md")
+    existing = ""
+    if os.path.exists(path):
+        existing = _io.open(path, encoding="utf-8", errors="replace").read()
+
+    if MARK_BEGIN in existing and MARK_END in existing:
+        head = existing[:existing.index(MARK_BEGIN)]
+        tail = existing[existing.index(MARK_END) + len(MARK_END):].lstrip("\n")
+        merged = head + section + ("\n" + tail if tail else "")
+        verb = "updated the harness section in"
+    elif existing.strip():
+        merged = existing.rstrip("\n") + "\n\n" + section
+        verb = "appended a harness section to"
+    else:
+        merged = "# %s\n\n%s" % (os.path.basename(os.path.abspath(project)), section)
+        verb = "created"
+    _io.open(path, "w", encoding="utf-8", newline="\n").write(merged)
+    print("%s CLAUDE.md" % verb)
+
+    print("")
+    print("next, in this order:")
+    print("  1. read tools/vharness/NOTES.md            (install nothing, costs a tab)")
+    print("  2. python tools/vharness/vq.py check .     (read-only, writes nothing)")
+    print("  3. start Claude Code here; the CLAUDE.md is picked up automatically")
+    return 0
+
+
 def cmd_install(project):
     """Copy the harness into a project that has never seen it."""
     import shutil
@@ -231,7 +336,8 @@ def cmd_package(dest):
 
 
 COMMANDS = {"package": cmd_package, "check": cmd_check, "ui": cmd_ui, "push": cmd_push, "ops": cmd_ops,
-            "health": cmd_health, "selftest": cmd_selftest, "install": cmd_install}
+            "health": cmd_health, "selftest": cmd_selftest, "install": cmd_install,
+            "init": cmd_init}
 
 
 def main(argv):
