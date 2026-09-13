@@ -176,6 +176,22 @@ def _copy_learnings(dest):
     return n
 
 
+def _copy_license(dest):
+    """The LICENSE travels with every copy, vendored ones included.
+
+    MIT permits reuse on one condition: the notice is included in all copies or
+    substantial portions. Everything else here is copied by extension, and
+    LICENSE has none, so without this every `package` and every vendored
+    tools/vharness would have shipped without the one file the license requires.
+    """
+    import shutil
+    src = os.path.join(HERE, "LICENSE")
+    if not os.path.exists(src):
+        return 0
+    shutil.copy2(src, os.path.join(dest, "LICENSE"))
+    return 1
+
+
 # What a Vantiq project's CLAUDE.md needs to say. Written into the project by
 # `vq.py init`, between markers so a re-run replaces it instead of stacking.
 #
@@ -291,6 +307,7 @@ def cmd_install(project):
             shutil.copy2(os.path.join(HERE, fn), os.path.join(dest, fn))
             n += 1
     n += _copy_learnings(dest)
+    n += _copy_license(dest)
     print("installed %d files into %s" % (n, os.path.relpath(dest, project)))
     print("run:  python tools/vharness/vq.py check .")
     return 0
@@ -322,12 +339,13 @@ def cmd_package(dest):
         shutil.copy2(os.path.join(HERE, fn), os.path.join(dest, fn))
         taken.append(fn)
     learned = _copy_learnings(dest)
-    print("packaged %d files into %s, plus %d in learnings/"
-          % (len(taken), dest, learned))
+    licensed = _copy_license(dest)
+    print("packaged %d files into %s, plus %s%d in learnings/"
+          % (len(taken), dest, "LICENSE and " if licensed else "", learned))
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 128 assertions, proves the rules hold")
+    print("  python vq.py selftest              # 130 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder holding a .mcp.json")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")

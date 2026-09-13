@@ -938,6 +938,34 @@ def tree_cases():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def copy_cases():
+    """Every copy the harness makes carries its LICENSE.
+
+    MIT permits reuse on one condition: the notice travels with all copies or
+    substantial portions. `package` and `install` copy by file extension, and
+    LICENSE has none, so this is exactly the kind of requirement that is met
+    once and then quietly stops being met when someone tidies the copy loop.
+    """
+    import contextlib
+    import shutil
+    import tempfile
+    import vq
+    root = tempfile.mkdtemp()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            vq.cmd_package(os.path.join(root, "pkg"))
+            os.makedirs(os.path.join(root, "proj"))
+            vq.cmd_install(os.path.join(root, "proj"))
+        return [
+            ("a `vq.py package` copy carries LICENSE",
+             os.path.exists(os.path.join(root, "pkg", "LICENSE"))),
+            ("a `vq.py install` copy carries LICENSE",
+             os.path.exists(os.path.join(root, "proj", "tools", "vharness", "LICENSE"))),
+        ]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def main():
     failures = 0
     print("rule cases")
@@ -967,6 +995,7 @@ def main():
         print("  %s %s" % ("ok  " if ok else "FAIL", name))
 
     for label, fn in (("tree layouts", tree_cases),
+                      ("copies", copy_cases),
                       ("REST traps", client_cases),
                       ("scheduled events", ops_cases),
                       ("console", ui_cases)):

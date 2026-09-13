@@ -177,7 +177,7 @@ first three had missed.
 ### Running the tool on itself
 
 ```bash
-python selftest.py                      # 128 assertions, run after any rule change
+python selftest.py                      # 130 assertions, run after any rule change
 python notes_index.py                   # maintainers: regenerate NOTES.md
 python vq.py install <project>          # vendor into a project's tools/vharness
 ```
@@ -200,7 +200,7 @@ check_namespace(Client(repo="<project>"), "com.example.app")
 | `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 128 assertions. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 130 assertions. |
 | `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. Maintainers only: it needs the demo-series documents. |
 | `mine_sessions.py` | Walks your own Claude Code history for candidate learnings, redacts credentials, and prints a census of the ones it found. |
 | `learnings/` | The pooled corpus: one file per contributor, named by initials, produced with `EXTRACT-LEARNINGS.md`. |
@@ -287,7 +287,7 @@ entry is one developer's afternoon; the sweep is everyone else's.
 python vq.py package <dest>
 ```
 
-Twelve files plus `learnings/`. **Python 3.6 or later and nothing else** — no third-party packages,
+Twelve files plus `LICENSE` and `learnings/`. **Python 3.6 or later and nothing else** — no third-party packages,
 standard library only. The recipient needs a project folder containing a
 `.mcp.json` with a Vantiq server entry, which is what the MCP integration
 already writes. Nothing is hardcoded to a namespace, a server or a package:
@@ -335,3 +335,10 @@ down gets deleted the first time it is inconvenient.
   pure logic, but have not yet been executed against a live namespace. If
   something misbehaves against a real server, look there first, and please open
   an issue.
+
+## License
+
+MIT; see [`LICENSE`](LICENSE). Contributions arrive by pull request and are
+accepted under the same license, so opening one is agreeing to that. Copies made
+with `vq.py package`, `install` or `init` carry the `LICENSE` file with them, as
+the license requires.

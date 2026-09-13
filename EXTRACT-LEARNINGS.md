@@ -27,7 +27,8 @@ inside it already are (`VANTIQ-LEARNINGS-AB.md`), and treat section 4 of the
 prompt as the publishing bar it is. A reviewer re-reads every entry for customer,
 namespace and credential leakage before merging, and will send a file back
 rather than scrub it for you. Do not edit `NOTES.md` in your pull request; it is
-regenerated on merge.
+regenerated on merge. Contributions are accepted under the repository's MIT
+license, so opening the pull request is agreeing to that.
 
 Re-run every month or two with `--since <date>`.
 
