@@ -1,0 +1,7 @@
+# Line endings are LF in the repository and in every checkout.
+#
+# Contributions arrive by pull request from Windows, macOS and Linux, and a
+# Windows editor with core.autocrlf=false commits CRLF, which turns a one-line
+# change into a whole-file diff that nobody can review. Python and Markdown do
+# not care about the line ending; reviewers do.
+* text=auto eol=lf

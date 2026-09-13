@@ -100,10 +100,12 @@ COVERAGE = {
 # ---------------------------------------------------------------------------
 # The pooled professional-services corpus, 2026-09.
 #
-# Three developers audited their own Claude Code history independently, using
-# the prompt in EXTRACT-LEARNINGS.md, and filed 140 entries between them. Unlike
-# SOURCES above, these files SHIP with the harness in learnings/, so this half
-# of the index regenerates anywhere.
+# Four developers audited their own Claude Code history independently, using
+# the prompt in EXTRACT-LEARNINGS.md, and filed 151 entries between them. Unlike
+# SOURCES above, these files SHIP with the harness in learnings/, so every id a
+# rule cites can be looked up anywhere. Regenerating NOTES.md still needs
+# SOURCES as well: build() refuses rather than write a file that silently lost
+# the demo-series half.
 #
 # Keyed by entry id, because the entries have one and a substring match on a
 # title is how you cover the wrong thing.
@@ -129,7 +131,6 @@ POOLED_COVERAGE = {
     "DM-05": ("lint", "missing-builtin"),
     # --- client -------------------------------------------------------------
     "NR-30": ("client", "_path_trap, system. prefix"),
-    "NR-31": ("client", "put(), POST then PUT compiles"),
     "NR-33": ("client", "is_not_found"),
     "NR-35": ("client", "document() uses /docs/"),
     "NR-36": ("client", "strip_server_fields"),
@@ -150,7 +151,6 @@ POOLED_COVERAGE = {
     "NC-04": ("lint", "bare-array-type"),
     "NC-05": ("lint", "when-alias"),
     "NC-07": ("lint", "insert-object-literal"),
-    "NC-06": ("client", "body_trap"),
     "NC-08": ("client", "strip_server_fields"),
     "NC-11": ("client", "body_trap"),
     "NC-09": ("push", "vailErrors is the gate, not validateVAIL"),
@@ -163,7 +163,7 @@ POOLED_COVERAGE = {
     "NR-24": ("push", "drift + vailErrors, both levels"),
     "DM-08": ("push", "drift + vailErrors, both levels"),
     "PS-09": ("push", "drift + vailErrors, both levels"),
-    "PS-10": ("push", "drift + vailErrors, both levels"),
+    "PS-10": ("push", "vailErrors, service level; drift does not compare Required"),
     # --- convention: real, and no check can see it --------------------------
     "NR-13": ("convention", "alias a parameter before using it in WHERE"),
     "NR-14": ("convention", "gate on a flag; return does not exit"),
@@ -190,6 +190,8 @@ POOLED_COVERAGE = {
     "DM-37": ("convention", "client event subscriptions are IDE-only"),
     "NC-03": ("convention", "retry a PROCEDURE header with the short service name"),
     "NC-10": ("convention", "restart before trusting a subagent's MCP tool list"),
+    "NR-31": ("convention", "POST, then PUT the identical body, to compile it"),
+    "NC-06": ("convention", "a Visual Event Handler's package must be compound"),
 }
 
 
@@ -268,14 +270,14 @@ def build():
     # harness gets the content. Only someone with the original demo series can
     # REGENERATE the SOURCES half, and running this without those documents
     # would silently replace 73 learnings with a shorter file. Refuse instead.
-    # The pooled half ships in learnings/ and regenerates anywhere.
+    # The pooled half ships in learnings/, but rebuilding still needs both.
     if not rows:
         raise SystemExit(
             "none of the source documents are present, so the demo-series half\n"
             "of the index cannot be rebuilt. NOTES.md already in this folder is\n"
-            "the shipped copy: keep it. To add a learning of your own, drop a\n"
-            "VANTIQ-LEARNINGS-<you>.md in learnings/ (see EXTRACT-LEARNINGS.md)\n"
-            "or point SOURCES at your own records.")
+            "the shipped copy: keep it. To add a learning of your own, open a\n"
+            "pull request adding VANTIQ-LEARNINGS-<initials>.md to learnings/\n"
+            "(see EXTRACT-LEARNINGS.md); NOTES.md is regenerated on merge.")
     enforced = [r for r in rows if r[2] and r[2] != "convention"]
     convention = [r for r in rows if r[2] == "convention"]
     uncovered = [r for r in rows if not r[2]]

@@ -17,9 +17,17 @@ had pasted into a session. **Read that census. Rotate anything live.** The repor
 the script writes is redacted; your transcripts are not.
 
 Then paste the prompt below into Claude Code in the same directory. Expect twenty
-to forty minutes. Send the result to <owner>; it is merged into the shared
-harness's `NOTES.md`, which is where the lint rules come from, so an entry you get
-right becomes a check that saves the next person the same afternoon.
+to forty minutes. Then open a pull request against this repository adding your
+file to `learnings/`. It is merged into `NOTES.md`, which is where the lint rules
+come from, so an entry you get right becomes a check that saves the next person
+the same afternoon.
+
+**This repository is public.** Name the file by your initials, the way the ids
+inside it already are (`VANTIQ-LEARNINGS-AB.md`), and treat section 4 of the
+prompt as the publishing bar it is. A reviewer re-reads every entry for customer,
+namespace and credential leakage before merging, and will send a file back
+rather than scrub it for you. Do not edit `NOTES.md` in your pull request; it is
+regenerated on merge.
 
 Re-run every month or two with `--since <date>`.
 
@@ -28,7 +36,7 @@ Re-run every month or two with `--since <date>`.
 ```
 You are auditing my Claude Code history to recover what I learned building on the
 Vantiq platform, so it can be pooled with the rest of the professional services
-team. The deliverable is one file: VANTIQ-LEARNINGS-<myname>.md.
+team. The deliverable is one file: VANTIQ-LEARNINGS-<initials>.md.
 
 
 ## 1. The material
@@ -81,8 +89,8 @@ needs at least one of these, quoted from the source:
 If you cannot produce one, mark the entry unverified or drop it. Do not
 reconstruct an error message from memory of how they usually look. Do not
 generalise one namespace's quirk into a platform rule. Do not smooth over a gap
-to make an entry read better. Twelve of these files are being merged and an
-unverified entry will be believed. A short honest file beats a long confident
+to make an entry read better. These files are published in a public repository
+and an unverified entry will be believed. A short honest file beats a long confident
 one, and I will not be disappointed by a thin result.
 
 Note where you can whether the behaviour still holds. Some of this concerns a
@@ -102,12 +110,12 @@ It cannot recognise a customer. Before a line reaches the output file:
   - If a credential slipped past the redaction, cut it to <REDACTED> and tell me
     which file it was in so the pattern can be added.
 
-Assume the file will be forwarded outside the team.
+The file will be published in a public repository. Write it that way.
 
 
 ## 5. Output format
 
-One file, VANTIQ-LEARNINGS-<myname>.md, using exactly this shape per entry so
+One file, VANTIQ-LEARNINGS-<initials>.md, using exactly this shape per entry so
 the files merge without a human reconciling them:
 
   ### <the behaviour stated in one line, present tense>

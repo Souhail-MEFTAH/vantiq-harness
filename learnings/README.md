@@ -18,8 +18,8 @@ defect log on the open internet. If an author would rather be credited, put the
 name back.
 
 `../NOTES.md` indexes all of them by id and says which are enforced, which are
-convention, and which nobody has triaged. Run `python ../notes_index.py` after
-adding a file.
+convention, and which nobody has triaged. A maintainer regenerates it when a new
+file is merged.
 
 ## Reading an entry
 
@@ -31,24 +31,30 @@ that is worth reading before trusting the entries above it.
 
 ## Before you turn one into a rule
 
-Read the evidence, not the title. Three entries did not survive that step, and
-each is recorded in `../lint.py` beside the rule it would have been:
+Read the evidence, not the title. Three entries, and part of a fourth, did not
+survive that step, and each is recorded in `../lint.py` beside the rule it would
+have been:
 
 - **DM-03** (`->` never compiles) — the failing line also called a method that
   did not exist, from the same session; the arrow was never tested alone.
 - **PS-05** (`state` is reserved) — 68 uses in shipping code across two demos.
 - **DM-10** (`Concurrent.*` does not exist) — 11 uses in one demo; the entry's
   own fix line concedes it is version-dependent.
+- **NC-02**, in part (`PRIVATE` fails like `PUBLIC`) — 820 uses in shipping
+  code. The `PUBLIC` half was cleanly isolated and is a rule; the `PRIVATE` half
+  was a guess.
 
 Then sweep it. `check_tree` over a codebase you did not write is what found all
 three, and it took one run.
 
 ## Adding yours
 
-Drop `VANTIQ-LEARNINGS-<yourname>.md` in this directory. Entries appear in
-`NOTES.md` as untriaged until someone maps the id in `POOLED_COVERAGE`, which is
-the honest default — most learnings are not checkable, and about a fifth are.
+Open a pull request adding `VANTIQ-LEARNINGS-<initials>.md` to this directory.
+Entries appear in `NOTES.md` as untriaged until someone maps the id in
+`POOLED_COVERAGE`, which is the honest default — most learnings are not
+checkable, and about a third of these have been.
 
-Assume these files get forwarded outside the team: no customer names, no
-namespace names, no credentials. `mine_sessions.py` redacts credentials and
-cannot recognise a customer.
+This repository is public: no customer names, no namespace names, no
+credentials, and the file named by your initials. `mine_sessions.py` redacts
+credentials and cannot recognise a customer, so a reviewer re-reads every entry
+before merging.

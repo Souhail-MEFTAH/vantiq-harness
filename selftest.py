@@ -752,6 +752,11 @@ def client_cases():
                 bool(_path_trap("types/Ticket", "POST"))))
     out.append(("reading a type definition at types/<T> is allowed",
                 not _path_trap("types/Ticket", "GET")))
+    # PUT updates the definition and DELETE removes the type; both are right.
+    # An earlier version trapped every write verb here.
+    out.append(("updating or deleting a type DEFINITION at types/<T> is allowed",
+                not _path_trap("types/Ticket", "PUT")
+                and not _path_trap("types/Ticket", "DELETE")))
     out.append(("custom/<T> is allowed",
                 not _path_trap("custom/Ticket", "POST")))
 
@@ -784,22 +789,19 @@ def client_cases():
     out.append(("a project with no description is allowed",
                 not body_trap("projects", {"name": "P"})))
 
-    # NC-06: a VEH package must be compound. The opposite of NC-03's advice for
-    # PROCEDURE headers, which is why both are spelled out.
-    out.append(("a VEH on a simple package name is refused",
-                bool(body_trap("collaborationtypes",
-                               {"name": "TemperatureMonitor",
-                                "isEventHandler": True}))))
-    out.append(("a VEH on a compound package name is allowed",
+    # NC-06 is deliberately NOT a guard: the entry records the error but not
+    # the create body, so which field holds the package would be a guess, and a
+    # guessed field in raw() refuses valid writes. This asserts the silence.
+    out.append(("a VEH body is not second-guessed (NC-06 recorded no body)",
                 not body_trap("collaborationtypes",
-                              {"name": "com.example.TemperatureMonitor",
-                               "isEventHandler": True})))
+                              {"name": "onReading", "isEventHandler": True,
+                               "boundService": "com.example.TemperatureMonitor"})))
     return out
 
 
 def ops_cases():
     """PS-14, PS-15, PS-16 and NR-38, all on scheduledevents."""
-    from opscheck import scheduled_faults, service_schedule_faults
+    from opscheck import scheduled_faults, service_schedule_faults, dead_schedules
     out = []
 
     ok = {"name": "tick", "interval": 5000, "topic": "/demo/eda/simTick"}
@@ -821,6 +823,30 @@ def ops_cases():
                 bool(service_schedule_faults([{"name": "w", "interval": 15000}]))))
     out.append(("120,000ms is an even multiple and passes",
                 not service_schedule_faults([{"name": "w", "interval": 120000}])))
+
+    # PS-16, and a bug in the check itself. A rule's body is WRITTEN under
+    # `ruleText` and STORED as `source` (NR-38); asking for one field only came
+    # back empty and would have reported every scheduled event as dead.
+    class _Rules(object):
+        def __init__(self, rows):
+            self.rows = rows
+
+        def select(self, resource, **kw):
+            return self.rows
+
+    events = [{"name": "tick", "topic": "/demo/eda/simTick"},
+              {"name": "orphan", "topic": "/demo/eda/nobody"}]
+    stored = _Rules([{"name": "onTick",
+                      "source": 'RULE onTick\nWHEN EVENT OCCURS ON '
+                                '"/topics/demo/eda/simTick" AS event\n'}])
+    dead, err = dead_schedules(stored, events)
+    out.append(("a rule body stored as `source` counts as a subscriber",
+                not err and ("tick", "/demo/eda/simTick") not in dead))
+    out.append(("a scheduled event nothing subscribes to is reported",
+                ("orphan", "/demo/eda/nobody") in dead))
+    dead2, err2 = dead_schedules(_Rules([{"name": "onTick"}]), events)
+    out.append(("rules with no readable body are refused, not read as all-dead",
+                bool(err2) and not dead2))
     return out
 
 

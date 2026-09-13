@@ -149,13 +149,17 @@ def _path_trap(path, method="GET"):
     # DM-16. `types/<T>` is the type DEFINITION resource. Instances of a custom
     # type live at `custom/<T>`, and the wrong one 400s.
     #
-    # Only on a WRITE. `GET types/<T>` reads the definition and is exactly right;
-    # trapping that broke reading a schema, which is a thing this harness does.
+    # Only on POST, which is the instance INSERT that DM-16 describes. Every
+    # other verb on `types/<T>` addresses the definition and is exactly right:
+    # GET reads a schema, PUT updates it, DELETE removes the type. An earlier
+    # version trapped every write verb, and would have refused a legitimate
+    # schema update or type deletion with advice about instances - the guard
+    # crying wolf on the write path, which is where it costs most.
     parts = p.split("/")
-    if (method in ("POST", "PUT", "PATCH", "DELETE")
+    if (method == "POST"
             and len(parts) >= 2 and parts[0] == "types" and parts[1] not in ("", "@")):
         return ("`types/%s` is the type DEFINITION; instances of a custom type "
-                "insert and update at `custom/%s`." % (parts[1], parts[1]))
+                "insert at `custom/%s`." % (parts[1], parts[1]))
     # NR-35, and already encoded in Client.document(). The documented content
     # sub-resource 400s with io.vantiq.resource.not.found even for a document
     # that exists, on 1.44.1.
@@ -168,21 +172,22 @@ def _path_trap(path, method="GET"):
 def body_trap(resource, body):
     """The reason this create body is wrong, or None.
 
-    Two shapes that are rejected on save, both of which cascade: the create
-    fails, and every later step that assumed the resource exists fails too, so
-    one root cause is reported as five failures somewhere else.
+    NC-11: `system.projects` has no `description`, unlike most resources, and
+    the failure cascades. "The property: system.projects.description is not
+    defined." was followed by five "The requested instance
+    ('{name=<ProjectName>}') of the projects resource could not be found."
+    errors on the dependent attach calls - one root cause reported as five
+    failures somewhere else.
 
-      NC-11: `system.projects` has no `description`, unlike most resources.
-      "The property: system.projects.description is not defined." was followed
-      by five "The requested instance ('{name=<ProjectName>}') of the projects
-      resource could not be found." errors on the dependent attach calls.
-
-      NC-06: a Visual Event Handler's owning package must be a COMPOUND name.
-      "The package name 'TemperatureMonitor' is a simple name.  Packages must be
-      compound names with at least one package separator ('.')." Note this is
-      the opposite of the PROCEDURE header constraint in NC-03, where the short
-      undotted service name is the one that parses - the two resource kinds
-      cannot be reasoned about with one rule about dots.
+    Deliberately NOT here: NC-06, a Visual Event Handler's package must be a
+    compound name. The error is real - "The package name 'TemperatureMonitor'
+    is a simple name.  Packages must be compound names with at least one
+    package separator ('.')." - but the entry does not record the create BODY,
+    so which field carries the package would be a guess. A guard in raw() that
+    guesses a field refuses valid writes whose package lives in a field it did
+    not guess, `boundService` among them (NR-25). It was written, then
+    withdrawn before release, and stays a convention in NOTES.md until someone
+    records the body that failed.
     """
     if not isinstance(body, dict):
         return None
@@ -191,13 +196,6 @@ def body_trap(resource, body):
         return ("`system.projects` defines no `description` property; the create "
                 "is rejected and every later step that attaches to this project "
                 "then reports the project missing.")
-    if head == "collaborationtypes" and body.get("isEventHandler"):
-        pkg = body.get("packageName") or body.get("package") or ""
-        name = body.get("name") or ""
-        owner = pkg or name.rsplit(".", 1)[0] if "." in name else pkg
-        if not owner or "." not in owner:
-            return ("a Visual Event Handler's package must be a compound name "
-                    "with at least one `.`; a simple name is rejected on save.")
     return None
 
 
@@ -372,16 +370,27 @@ class Client(object):
 
         So this reads `ars_namespace` back from the server rather than trusting
         any local configuration - which is the only way either team found out.
-        The types listing is used because every namespace has some and the field
-        is on every record.
+        NOT `limit=1`. A listing returns system-owned and inherited records
+        alongside your own - NR-48 is 522 stray procedures created by trusting
+        one - so the first row of `types` can belong to `system` or to a parent
+        namespace, and the one guard meant to catch a wrong namespace would then
+        report one. This takes the most common `ars_namespace` among rows that
+        are neither system-owned nor platform-named. A namespace with no types
+        of its own still defeats that, and it raises rather than guessing.
+
+        Not yet executed against a live namespace; see the README.
         """
         if self._namespace is None:
-            rows = self.select("types", limit=1, props=["ars_namespace"])
-            if not rows or not rows[0].get("ars_namespace"):
+            rows = self.select("types", limit=500, props=["name", "ars_namespace"])
+            own = [r.get("ars_namespace") for r in rows
+                   if r.get("ars_namespace") and r.get("ars_namespace") != "system"
+                   and not (r.get("name") or "").startswith(("system.", "io.vantiq."))]
+            ns = _modal(own)
+            if not ns:
                 raise VantiqError(
                     "cannot determine the token's namespace; refusing to guess. "
                     "Check it by hand before writing anything.")
-            self._namespace = rows[0]["ars_namespace"]
+            self._namespace = ns
         return self._namespace
 
     def assert_namespace(self, expected):

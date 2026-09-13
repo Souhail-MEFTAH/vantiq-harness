@@ -4,8 +4,8 @@ Tooling for building on Vantiq, assembled from what seven flagship demos cost us
 to learn, and from what four professional-services developers found when they
 audited their own session history for the same thing.
 
-**224 recorded behaviours, 78 of them enforced by a check.** See `NOTES.md`,
-which is generated and lists the other 146 honestly rather than implying
+**224 recorded behaviours, 76 of them enforced by a check.** See `NOTES.md`,
+which is generated and lists the other 148 honestly rather than implying
 coverage.
 
 > Not an official Vantiq release, and not endorsed by or affiliated with Vantiq
@@ -18,24 +18,39 @@ coverage.
 
 ## Start here
 
-**New Vantiq project, first session.** Two commands, once:
+**You need:** Python 3.6 or later (standard library only, nothing to `pip
+install`), [Claude Code](https://claude.com/claude-code), and a Vantiq project
+folder whose `.mcp.json` names a Vantiq server — which the MCP integration
+already writes.
+
+**New Vantiq project, first session.** Get the harness once:
 
 ```bash
-python vq.py init /path/to/my-vantiq-project
+git clone https://github.com/Souhail-MEFTAH/vantiq-harness.git
+```
+
+Then, for each project:
+
+```bash
+python vantiq-harness/vq.py init /path/to/my-vantiq-project
 ```
 
 ```bash
-cd /path/to/my-vantiq-project && claude
+cd /path/to/my-vantiq-project
 ```
 
-`init` vendors the harness into `tools/vharness` **and** writes the `CLAUDE.md`
-section that tells Claude it exists. Claude Code reads that on the first turn,
-so the doctrine is in context before you type anything — you never have to
-remember to mention it.
+```bash
+claude
+```
 
-The only prerequisite is a `.mcp.json` in the project holding a Vantiq server
-entry, which the MCP integration already writes. If it is missing, `init` says
-so and explains what one is.
+`init` vendors the harness into the project's `tools/vharness` **and** writes the
+`CLAUDE.md` section that tells Claude it exists. Claude Code reads that on the
+first turn, so the doctrine is in context before you type anything — you never
+have to remember to mention it. If the `.mcp.json` is missing, `init` says so and
+explains what one is.
+
+On macOS and most Linux distributions the interpreter is `python3`; use that
+wherever this README says `python`.
 
 **Already have a project and just want to look?** `NOTES.md` needs no install
 at all, and `python vq.py check <project>` only reads. Full walkthrough in
@@ -112,8 +127,8 @@ Vantiq exporter's.
 
 Expect a handful of findings on a healthy project, not hundreds. **If you get
 hundreds, that is a bug in this tool rather than a verdict on your namespace** -
-please open an issue, because that is exactly how the last 94% of false
-positives were found.
+please open an issue. The last time that happened, 94% of what `check` reported
+on real projects turned out to be its own assumptions about directory layout.
 
 ### 4. Before a demo, ask what is quietly broken and what it costs.
 
@@ -151,7 +166,10 @@ python mine_sessions.py --out candidates.md
 Walks your own Claude Code history and produces a redacted pile of candidates;
 then follow the prompt in `EXTRACT-LEARNINGS.md`. **Read the credential census
 it prints and rotate anything live** - the report is redacted, your transcripts
-are not. Drop the result in `learnings/` and re-run `notes_index.py`.
+are not. Then open a pull request adding the result to `learnings/`, named by
+your initials; `NOTES.md` is regenerated on merge. This repository is public, so
+section 4 of that prompt is the publishing bar, and a reviewer holds every entry
+to it.
 
 Four people have done this so far, and the fourth still found five things the
 first three had missed.
@@ -159,8 +177,8 @@ first three had missed.
 ### Running the tool on itself
 
 ```bash
-python selftest.py                      # 125 assertions, run after any rule change
-python notes_index.py                   # regenerate NOTES.md
+python selftest.py                      # 128 assertions, run after any rule change
+python notes_index.py                   # maintainers: regenerate NOTES.md
 python vq.py install <project>          # vendor into a project's tools/vharness
 ```
 
@@ -175,16 +193,17 @@ check_namespace(Client(repo="<project>"), "com.example.app")
 
 | Module | What it does |
 |---|---|
+| `vq.py` | The one entry point: `init`, `check`, `health`, `ops`, `push`, `ui`, `selftest`, `install`, `package`. |
 | `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
 | `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
 | `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
 | `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 125 assertions. |
-| `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. |
-| `learnings/` | The pooled corpus: one file per developer, produced with `EXTRACT-LEARNINGS.md`. |
-| `sync.py` | Vendors the harness into each demo's `tools/vharness`. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 128 assertions. |
+| `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. Maintainers only: it needs the demo-series documents. |
+| `mine_sessions.py` | Walks your own Claude Code history for candidate learnings, redacts credentials, and prints a census of the ones it found. |
+| `learnings/` | The pooled corpus: one file per contributor, named by initials, produced with `EXTRACT-LEARNINGS.md`. |
 
 ## Two rules about the rules
 
@@ -211,6 +230,13 @@ every one of those false positives is now a self-test case asserting silence.
 A separate rule was written, run against 59 occurrences in working code, tested
 against the live namespace, disproved, and deleted. The disproof is recorded in
 `lint.py` so nobody adds it back.
+
+It happened again in September 2026, in a check nobody would have suspected.
+Run over seven demos' source trees, `check` reported **520 findings, 474 of them
+wrong**: 407 because it understood one team's directory layout and not the one
+the Vantiq exporter writes, and 67 because the package rule matched `package`
+case-sensitively while the exporter writes `PACKAGE`. After the fix, 32. Both
+are self-test cases now, so neither can come back quietly.
 
 The lesson generalises: **a rule is not finished until it has run against a
 codebase you did not write.**
@@ -239,6 +265,14 @@ All three deletions and both narrowings are recorded in `lint.py` beside the
 rule that would have been, with the evidence that killed them, so the next
 person reading the entry does not re-add it.
 
+The fourth file added one more of the same kind. NC-02 isolated `PUBLIC` as a
+parse failure cleanly — same procedure, one token changed — then guessed in its
+title that `PRIVATE` fails too. `PRIVATE` appears on 820 procedures in the demo
+corpus, so the rule names `PUBLIC` only. And one client guard, written from an
+entry that recorded the error but not the request body behind it (NC-06), was
+withdrawn before release: a guard that has to guess which field holds a value
+refuses valid writes that keep it somewhere else.
+
 The sweep is the reason any of this is known. Across **1,757 `.vail` files in
 seven demos**, the new rules went from 93 findings to 3, and the 3 remaining are
 the shape their entry describes. The console rules ran over 32 hosted pages with
@@ -259,19 +293,24 @@ standard library only. The recipient needs a project folder containing a
 already writes. Nothing is hardcoded to a namespace, a server or a package:
 `check` discovers the application package from the namespace itself.
 
-Verified out of the box: a clean copy outside this repo, run against three
-Vantiq namespaces it did not own, self-test passing and lint clean.
+What has actually been verified, stated precisely because this README asks you
+to trust nothing else: a clean clone passes its self-test; every rule has been
+swept against 1,757 `.vail` files from seven demos (32 findings, all plausible);
+and the original rule set ran clean against three live namespaces it did not
+own. The rules and client guards added since September 2026 have been swept on
+disk, not yet re-run against a live namespace.
 
-**What is deliberately left behind.** `sync.py` knows one team's seven demo
-folders. Half of `notes_index.py` regenerates `NOTES.md` from documents nobody
-else has, and refuses rather than writing a truncated file. `NOTES.md` itself
-ships, because the 224 recorded behaviours are the most portable thing here, and
-so does `learnings/`, which regenerates anywhere.
+**What is deliberately left behind.** `notes_index.py` rebuilds `NOTES.md` from
+documents only the maintainer has, and refuses rather than write a truncated
+file. `NOTES.md` itself ships, because the 224 recorded behaviours are the most
+portable thing here, and so does `learnings/`, so every entry id a rule cites
+can be looked up.
 
 **Adding your own.** Run the prompt in `EXTRACT-LEARNINGS.md` over your own
-session history, drop the result in `learnings/`, and re-run `notes_index.py`.
-Your entries appear as untriaged, which is the honest default; the ones worth
-enforcing become rules with your evidence quoted in the docstring.
+session history and open a pull request adding the result to `learnings/`. Your
+entries appear as untriaged once `NOTES.md` is regenerated on merge, which is the
+honest default; the ones worth enforcing become rules with your evidence quoted
+in the docstring.
 
 **What is house style, not platform truth.** One rule: `em-dash` in `uilint`.
 It is off by default and needs `--house`. Every other rule is a defect that
@@ -286,7 +325,13 @@ down gets deleted the first time it is inconvenient.
 ## What it does not do
 
 - It does not check anything about the runtime behaviour of your agents.
-- Of the 224 recorded behaviours, 41 are conventions that cannot be detected
+- Of the 224 recorded behaviours, 43 are conventions that cannot be detected
   statically and 105 more have not been triaged. `NOTES.md` lists both honestly
-  rather than implying coverage: 78 enforced is a third of them, not most.
+  rather than implying coverage: 76 enforced is a third of them, not most.
 - `opscheck` measures; it does not tune. The levers are a judgement call.
+- The network-facing additions of September 2026 — `Client.namespace()` and
+  `assert_namespace()`, the `ars_namespace` filter in `procedures()`, `put()`,
+  and the scheduled-event checks in `opscheck` — are self-tested where they are
+  pure logic, but have not yet been executed against a live namespace. If
+  something misbehaves against a real server, look there first, and please open
+  an issue.

@@ -209,14 +209,21 @@ def dead_schedules(client, events):
     confident empty list.
     """
     try:
-        rules = client.select("rules", limit=500, props=["name", "ruleText"])
+        rules = client.select("rules", limit=500,
+                              props=["name", "ruleText", "source"])
     except VantiqError as exc:
         return [], str(exc)[:160]
-    # `ruleText` is the field a rule's body lives in. NR-38: sending `source` on
-    # a rule create is a server-side NullPointerException, and the server stores
-    # what you send as ruleText INTO source, so reading either can be right
-    # depending on the version. Both are checked rather than guessed.
+    # Where a rule's body is READ from is not where it is WRITTEN to. NR-38: a
+    # create takes the body under `ruleText` - sending `source` is a server-side
+    # NullPointerException - and the server stores it as `source`. An earlier
+    # version asked the listing for `ruleText` alone, would have got no bodies
+    # back, and reported every scheduled event in the namespace as firing into
+    # nothing. Both fields are requested, and a listing with rules but no
+    # readable bodies is refused rather than read as "nobody subscribes".
     bodies = " ".join((r.get("ruleText") or r.get("source") or "") for r in rules)
+    if rules and not bodies.strip():
+        return [], ("rules were listed but none carried a body under `ruleText` "
+                    "or `source`; not guessing which scheduled events are dead")
     out = []
     for e in events or []:
         topic = e.get("topic")

@@ -287,7 +287,7 @@ def cmd_install(project):
     os.makedirs(dest, exist_ok=True)
     n = 0
     for fn in sorted(os.listdir(HERE)):
-        if fn.endswith((".py", ".md")) and fn != "sync.py":
+        if fn.endswith((".py", ".md")):
             shutil.copy2(os.path.join(HERE, fn), os.path.join(dest, fn))
             n += 1
     n += _copy_learnings(dest)
@@ -299,11 +299,10 @@ def cmd_install(project):
 def cmd_package(dest):
     """A copy fit to hand to another Vantiq developer.
 
-    Leaves behind the two files that only mean something inside this repo:
-    sync.py knows one team's seven demo folders, and notes_index.py needs the
-    demo-series documents to rebuild the first half of NOTES.md - without them
-    it refuses rather than writing a truncated file, which is right here and
-    unhelpful in a copy.
+    Leaves behind notes_index.py, which needs the demo-series documents to
+    rebuild the first half of NOTES.md: without them it refuses rather than
+    write a truncated file, which is right for a maintainer and unhelpful in a
+    copy.
 
     NOTES.md itself ships, because the 224 recorded behaviours are the most
     portable thing here, and so does learnings/, because every rule taken from
@@ -311,7 +310,7 @@ def cmd_package(dest):
     read the entry.
     """
     import shutil
-    SERIES_ONLY = {"sync.py", "notes_index.py"}
+    SERIES_ONLY = {"notes_index.py"}
     os.makedirs(dest, exist_ok=True)
     taken, left = [], []
     for fn in sorted(os.listdir(HERE)):
@@ -328,7 +327,7 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 125 assertions, proves the rules hold")
+    print("  python vq.py selftest              # 128 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder holding a .mcp.json")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")
