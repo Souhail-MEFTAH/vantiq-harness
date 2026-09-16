@@ -62,11 +62,12 @@ cd /path/to/my-vantiq-project
 claude
 ```
 
-`init` vendors the harness into the project's `tools/vharness` **and** writes the
-`CLAUDE.md` section that tells Claude it exists. Claude Code reads that on the
-first turn, so the doctrine is in context before you type anything — you never
-have to remember to mention it. If it cannot find a VIA connection for the project
-at any scope, `init` says where it looked.
+`init` does three things. It vendors the harness into the project's
+`tools/vharness`. It writes the `CLAUDE.md` section that tells Claude the harness
+exists, which Claude Code reads on the first turn. And it installs **hooks**, so
+that every VAIL write Claude makes through VIA is read back and checked as it
+happens — whether Claude remembers to check or not. If it cannot find a VIA
+connection for the project at any scope, `init` says where it looked.
 
 On macOS and most Linux distributions the interpreter is `python3`; use that
 wherever this README says `python`.
@@ -107,7 +108,8 @@ has not been *told* about does not get used, and instead re-derives the same
 checks badly or trusts a 200.
 
 What lands in your `CLAUDE.md`, so you know before you run it: the four
-commands, a pointer to `NOTES.md`, and one paragraph of doctrine. Deliberately
+commands, a note that the hooks exist, a pointer to `NOTES.md`, and one paragraph
+of doctrine. Deliberately
 short — a `CLAUDE.md` listing every trap gets skimmed and ignored, and the traps
 belong in `NOTES.md` where each carries the error text that earned it. What has
 to be in context from the first turn is the habit, not the lookup table.
@@ -118,6 +120,34 @@ an existing `CLAUDE.md` is appended to, never overwritten.
 
 `vq.py install` does the files-only half, if you would rather wire up context
 yourself.
+
+#### The hooks `init` installs
+
+`CLAUDE.md` *tells* Claude to verify its work. A hook makes it happen anyway.
+`init` adds two to the project's `.claude/settings.local.json`:
+
+| When | What it does |
+|---|---|
+| after every VIA `upsert`, `insert`, `update` or `delete` of VAIL | Lints the source Claude sent, reads the resource back, and reads back its **service** too — a procedure can read clean while its service has stopped compiling. A compile error goes straight back to Claude. A lint finding goes back as context Claude can weigh, not as an error, because a linter can be wrong and the compiler cannot. |
+| when the session is about to end | Re-checks everything written in the session and refuses to finish while any of it does not compile — at most twice, so an error Claude cannot fix never traps a session. |
+
+They are **read-only**: they issue GETs and nothing else, and a self-test fails
+if that ever changes. They read back through the exact VIA connection Claude
+wrote through, which matters when a folder has two. If a hook cannot check — no
+connection, a rejected token, a timeout — it says so once and never blocks.
+
+`settings.local.json`, not `settings.json`, because the command is this machine's
+Python by absolute path; it is the per-developer file, and `init` adds it to
+`.gitignore` in a git project. Anything else already in the file is kept, and
+re-running `init` refreshes the hooks rather than adding a second set.
+
+To switch them off, set `VQ_HOOKS=off`, or remove them:
+
+```bash
+python vq.py hooks <project> off
+```
+
+`python vq.py init <project> --no-hooks` sets a project up without them.
 
 ### 2. Read `NOTES.md`. Install nothing.
 
@@ -203,9 +233,10 @@ first three had missed.
 ### Running the tool on itself
 
 ```bash
-python selftest.py                      # 145 assertions, run after any rule change
+python selftest.py                      # 172 assertions, run after any rule change
 python notes_index.py                   # maintainers: regenerate NOTES.md
 python vq.py install <project>          # vendor into a project's tools/vharness
+python vq.py hooks <project> off        # remove the Claude Code hooks
 ```
 
 ```python
@@ -219,14 +250,15 @@ check_namespace(Client(repo="<project>"), "com.example.app")
 
 | Module | What it does |
 |---|---|
-| `vq.py` | The one entry point: `init`, `check`, `health`, `ops`, `push`, `ui`, `selftest`, `install`, `package`. |
+| `vq.py` | The one entry point: `init`, `check`, `health`, `ops`, `push`, `ui`, `hooks`, `selftest`, `install`, `package`. |
+| `hooks.py` | The Claude Code hooks: read back every VIA write of VAIL as it happens, and check the session's writes compile before it ends. Read-only. |
 | `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
 | `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
 | `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
 | `client.py` | Finds the VIA connection the way Claude Code does, at local, project or user scope. Treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 145 assertions. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 172 assertions. |
 | `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. Maintainers only: it needs the demo-series documents. |
 | `mine_sessions.py` | Walks your own Claude Code history for candidate learnings, redacts credentials, and prints a census of the ones it found. |
 | `learnings/` | The pooled corpus: one file per contributor, named by initials, produced with `EXTRACT-LEARNINGS.md`. |
@@ -357,6 +389,13 @@ down gets deleted the first time it is inconvenient.
   statically and 104 more have not been triaged. `NOTES.md` lists both honestly
   rather than implying coverage: 76 enforced is a third of them, not most.
 - `opscheck` measures; it does not tune. The levers are a judgement call.
+- The hooks check that what Claude writes **compiles**, not that it **works**:
+  they never execute anything, because running a procedure can have side effects
+  and a hook must not. They also cannot check a VIA update addressed by a query
+  rather than a name, since they cannot tell which resource it changed, so they
+  skip it rather than guess. And they have been run in exec form from the
+  settings file `init` writes, against a local stand-in for Vantiq, but not yet
+  inside a live Claude Code session writing to a real namespace.
 - The network-facing additions of September 2026 — `Client.namespace()` and
   `assert_namespace()`, the `ars_namespace` filter in `procedures()`, `put()`,
   and the scheduled-event checks in `opscheck` — are self-tested where they are

@@ -1065,6 +1065,258 @@ def connection_cases():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def hook_cases():
+    """The Claude Code hooks, against a fake VIA and a disposable settings folder.
+
+    Nothing here touches a real namespace. The fake records every method the
+    hooks use, which is how read-only is proven rather than promised.
+    """
+    import json as _json
+    import re as _re
+    import shutil
+    import tempfile
+    import hooks
+    from client import VantiqError
+
+    root = tempfile.mkdtemp()
+    saved_root = hooks.STATE_ROOT
+    hooks.STATE_ROOT = os.path.join(root, "state")
+    methods = []
+
+    class Fake(object):
+        def __init__(self, errors=None, missing=(), fail=None):
+            self.errors, self.missing, self.fail = errors or {}, set(missing), fail
+            self.paths = []
+            self.server = "https://dev.example"
+            self.connection = {"name": "vantiq", "scope": "project",
+                               "host": "dev.example", "others": []}
+
+        def raw(self, method, path, body=None, query=None, api=True):
+            methods.append(method)
+            self.paths.append(path)
+            if self.fail:
+                raise VantiqError(self.fail)
+            if path in self.missing:
+                return 400, [{"code": "io.vantiq.resource.not.found", "message": "m"}]
+            return 200, {"name": path, "vailErrors": self.errors.get(path)}
+
+    env = {"CLAUDE_PROJECT_DIR": root}
+    src = "package com.acme\n\nPROCEDURE Svc.op(): Object\n\nreturn 1\n"
+    err = [{"error": {"code": "io.vantiq.vail.syntax.error", "message": "boom"},
+            "location": {"startPosition": {"line": 8, "column": 42}}}]
+
+    def pay(tool, inp, resp=None, session="s1"):
+        return {"session_id": session, "tool_name": "mcp__vantiq__" + tool,
+                "tool_input": inp, "tool_response": resp}
+
+    def run(fn, payload, fake=None, e=None):
+        called = []
+
+        def make(server, project):
+            called.append(server)
+            return fake or Fake()
+        code, out, errtext = fn(payload, make_client=make, env=e or env)
+        return code, out, errtext, called
+
+    out = []
+    try:
+        # --- what fires, and what does not ---------------------------------
+        c, o, e, called = run(hooks.post_tool_use,
+                              pay("select", {"resource": "system.procedures"}))
+        out.append(("a VIA read does not trigger a check", c == 0 and not o and not called))
+        c, o, e, called = run(hooks.post_tool_use,
+                              pay("upsert", {"resource": "system.types",
+                                             "instance": {"name": "T"}}))
+        out.append(("a write that carries no VAIL does not trigger a check",
+                    c == 0 and not o and not called))
+        c, o, e, called = run(hooks.post_tool_use,
+                              pay("upsert", {"resource": "procedures",
+                                             "instance": {"name": "Svc.op", "script": src}}),
+                              e={"CLAUDE_PROJECT_DIR": root, "VQ_HOOKS": "off"})
+        out.append(("VQ_HOOKS=off disables it completely", c == 0 and not o and not called))
+
+        # --- the procedure and its SERVICE are both read back -------------
+        fake = Fake()
+        c, o, e, _ = run(hooks.post_tool_use,
+                         pay("upsert", {"resource": "system.procedures",
+                                        "instance": {"name": "Svc.op", "script": src}}), fake)
+        out.append(("a clean write is silent and reads back procedure and service",
+                    c == 0 and not o and not e and fake.paths ==
+                    ["procedures/com.acme.Svc.op", "services/com.acme.Svc"]))
+
+        fake = Fake(errors={"procedures/com.acme.Svc.op": err})
+        c, o, e, _ = run(hooks.post_tool_use,
+                         pay("upsert", {"resource": "procedures",
+                                        "instance": {"name": "Svc.op", "script": src}}), fake)
+        out.append(("a compile error goes back to Claude (exit 2, on stderr)",
+                    c == 2 and "boom" in (e or "") and "line 8" in (e or "")))
+
+        fake = Fake(errors={"services/com.acme.Svc": err})
+        c, o, e, _ = run(hooks.post_tool_use,
+                         pay("upsert", {"resource": "procedures",
+                                        "instance": {"name": "Svc.op", "script": src}}), fake)
+        out.append(("a clean procedure in a broken service is still caught (SC-44)",
+                    c == 2 and "its service" in (e or "")))
+
+        # --- lint is context, not an error ---------------------------------
+        trap = src.replace("return 1", "var i = 0\nwhile (i < 3) {\n    i = i + 1\n}\nreturn i")
+        c, o, e, _ = run(hooks.post_tool_use,
+                         pay("upsert", {"resource": "procedures",
+                                        "instance": {"name": "Svc.op", "script": trap}}))
+        ctx = (_json.loads(o).get("hookSpecificOutput") or {}).get("additionalContext", "") \
+            if o else ""
+        out.append(("a lint finding reaches Claude as context, cited, without blocking",
+                    c == 0 and "while-loop" in ctx and "SC-A06" in ctx))
+
+        # --- names arrive in every form VIA accepts -----------------------
+        T = hooks.target
+        out.append(("a fully qualified procedure name is used as given",
+                    T("upsert", {"resource": "procedures", "instance":
+                                 {"name": "com.acme.Svc.op"}}, None)[1:3]
+                    == ("com.acme.Svc.op", "com.acme.Svc")))
+        out.append(("serviceName in the body qualifies a short name",
+                    T("insert", {"resource": "procedures", "instance":
+                                 {"name": "op", "serviceName": "com.acme.Svc"}}, None)[1:3]
+                    == ("com.acme.Svc.op", "com.acme.Svc")))
+        blocks = [{"type": "text", "text": _json.dumps(
+            {"name": "op", "serviceName": "com.acme.Svc", "vailErrors": None})}]
+        out.append(("the record VIA returned is preferred, in content blocks",
+                    T("upsert", {"resource": "procedures", "instance": {"name": "x"}},
+                      blocks)[1] == "com.acme.Svc.op"))
+        big = "Error: result (315,557 characters) exceeds maximum allowed tokens."
+        out.append(("an oversized result falls back to the name in the input",
+                    T("upsert", {"resource": "procedures", "instance":
+                                 {"name": "Svc.op", "script": src}}, big)[1]
+                    == "com.acme.Svc.op"))
+        out.append(("an update addressed by id is identified",
+                    T("update", {"resource": "system.procedures",
+                                 "resourceId": "com.acme.Svc.op",
+                                 "updates": {"script": src}}, None)[1] == "com.acme.Svc.op"))
+        out.append(("an update addressed by a query is skipped, not guessed",
+                    T("update", {"resource": "procedures", "qual": {"name": "op"},
+                                 "updates": {"script": src}}, None) is None))
+
+        # --- a failure of the hook never blocks ---------------------------
+        fake = Fake(fail="connection refused")
+        c1, o1, e1, _ = run(hooks.post_tool_use,
+                            pay("upsert", {"resource": "procedures", "instance":
+                                           {"name": "Svc.op", "script": src}},
+                                session="infra"), fake)
+        c2, o2, e2, _ = run(hooks.post_tool_use,
+                            pay("upsert", {"resource": "procedures", "instance":
+                                           {"name": "Svc.op", "script": src}},
+                                session="infra"), fake)
+        out.append(("an unreachable server is reported once, and never blocks",
+                    c1 == 0 and c2 == 0 and o1 and "could not" in o1
+                    and "systemMessage" in o1 and not o2))
+
+        # --- Stop ------------------------------------------------------------
+        c, o, e, called = run(hooks.stop, {"session_id": "nothing-written"})
+        out.append(("Stop does nothing, and calls nothing, if nothing was written",
+                    c == 0 and not o and not called))
+
+        run(hooks.post_tool_use, pay("upsert", {"resource": "procedures", "instance":
+                                                {"name": "Svc.op", "script": src}},
+                                     session="stop"))
+        bad = Fake(errors={"procedures/com.acme.Svc.op": err})
+        results = [run(hooks.stop, {"session_id": "stop"}, bad)[1] for _ in range(3)]
+        decisions = [_json.loads(r).get("decision") for r in results]
+        out.append(("Stop refuses to finish on a compile error, at most twice",
+                    decisions == ["block", "block", None]
+                    and "Not blocking again" in results[2]))
+
+        run(hooks.post_tool_use, pay("upsert", {"resource": "procedures", "instance":
+                                                {"name": "Svc.op", "script": src}},
+                                     session="clean"))
+        c, o, e, _ = run(hooks.stop, {"session_id": "clean"}, Fake())
+        out.append(("Stop confirms a clean session to the user",
+                    c == 0 and "read back clean" in (_json.loads(o).get("systemMessage") or "")))
+
+        run(hooks.post_tool_use, pay("upsert", {"resource": "procedures", "instance":
+                                                {"name": "Svc.op", "script": src}},
+                                     session="deleted"))
+        run(hooks.post_tool_use, pay("delete", {"resource": "procedures",
+                                                "resourceId": "com.acme.Svc.op"},
+                                     session="deleted"))
+        fake = Fake()
+        run(hooks.stop, {"session_id": "deleted"}, fake)
+        out.append(("a deleted procedure is not re-read, but its service is",
+                    fake.paths == ["services/com.acme.Svc"]))
+
+        out.append(("every call the hooks made was a GET (read-only)",
+                    methods and set(methods) == {"GET"}))
+
+        # --- the real connection path: offline, and the token never leaks ---
+        proj = os.path.join(root, "proj with spaces")
+        os.makedirs(proj)
+        io.open(os.path.join(proj, ".mcp.json"), "w", encoding="utf-8").write(_json.dumps(
+            {"mcpServers": {"vantiq": {"type": "http",
+             "url": "https://127.0.0.1:9/mcp/io.vantiq.via.mcpServer",
+             "headers": {"Authorization": "Bearer fake-secret-hook"}}}}))
+        code, o, e = hooks.post_tool_use(
+            pay("upsert", {"resource": "procedures", "instance":
+                           {"name": "Svc.op", "script": src}}, session="real"),
+            env={"CLAUDE_PROJECT_DIR": proj})
+        out.append(("through the real client, an unreachable host does not block or leak",
+                    code == 0 and o and "fake-secret-hook" not in (o or "") + (e or "")))
+
+        # --- install ---------------------------------------------------------
+        settings = os.path.join(proj, ".claude", "settings.local.json")
+        os.makedirs(os.path.dirname(settings))
+        mine = {"permissions": {"allow": ["Bash(npm *)"]},
+                "hooks": {"PostToolUse": [{"matcher": "Write|Edit", "hooks": [
+                    {"type": "command", "command": "prettier --write"}]}]}}
+        io.open(settings, "w", encoding="utf-8").write(_json.dumps(mine))
+        os.makedirs(os.path.join(proj, ".git"))
+        hooks.install(proj, python="C:/Py/python.exe", names=["vantiq", "prod"])
+        hooks.install(proj, python="C:/Py/python.exe", names=["vantiq", "prod"])
+        cfg = _json.load(io.open(settings, encoding="utf-8"))
+        post = cfg["hooks"]["PostToolUse"]
+
+        def is_ours(h):
+            return any(str(a).replace("\\", "/").endswith("tools/vharness/hooks.py")
+                       for a in (h.get("args") or []))
+        ours = [h for g in post for h in g["hooks"] if is_ours(h)]
+        out.append(("install keeps the user's own hooks and settings",
+                    cfg["permissions"] == mine["permissions"]
+                    and any(h.get("command") == "prettier --write"
+                            for g in post for h in g["hooks"])))
+        out.append(("re-running install does not add a second set",
+                    len(ours) == 1 and len(cfg["hooks"]["Stop"]) == 1))
+        out.append(("hooks run in exec form, so no shell parses a path with spaces",
+                    len(ours) == 1 and ours[0]["command"] == "C:/Py/python.exe"
+                    and ours[0]["args"][0].endswith("tools/vharness/hooks.py")
+                    and " " in ours[0]["args"][0]))
+        ours_groups = [g for g in post if any(is_ours(h) for h in g["hooks"])]
+        m = _re.compile(ours_groups[0]["matcher"] if ours_groups else "^$")
+        out.append(("the matcher takes VIA writes on every Vantiq connection, and nothing else",
+                    all(m.search(n) for n in ("mcp__vantiq__upsert", "mcp__vantiqVia__delete",
+                                              "mcp__prod__update"))
+                    and not any(m.search(n) for n in ("mcp__vantiq__select",
+                                                      "mcp__github__update",
+                                                      "mcp__vantiq__upsert_x"))))
+        gi = io.open(os.path.join(proj, ".gitignore"), encoding="utf-8").read()
+        out.append(("in a git project, settings.local.json is ignored exactly once",
+                    gi.count(".claude/settings.local.json") == 1))
+        hooks.install(proj, remove=True)
+        cfg = _json.load(io.open(settings, encoding="utf-8"))
+        out.append(("removal takes out only this harness's hooks",
+                    "Stop" not in cfg["hooks"] and len(cfg["hooks"]["PostToolUse"]) == 1
+                    and not any(is_ours(h) for g in cfg["hooks"]["PostToolUse"]
+                                for h in g["hooks"])))
+        io.open(settings, "w", encoding="utf-8").write("{ not json")
+        try:
+            hooks.install(proj)
+            refused = False
+        except VantiqError:
+            refused = io.open(settings, encoding="utf-8").read() == "{ not json"
+        out.append(("a malformed settings file is refused and left untouched", refused))
+        return out
+    finally:
+        hooks.STATE_ROOT = saved_root
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def copy_cases():
     """Every copy the harness makes carries its LICENSE.
 
@@ -1173,6 +1425,7 @@ def main():
     for label, fn in (("citations", citation_cases),
                       ("tree layouts", tree_cases),
                       ("VIA connection", connection_cases),
+                      ("hooks", hook_cases),
                       ("copies", copy_cases),
                       ("REST traps", client_cases),
                       ("scheduled events", ops_cases),

@@ -6,7 +6,8 @@
     python vq.py ops     <project> [package] [ReadModel ...]
     python vq.py health  <project> [package]   compile state, both levels
     python vq.py selftest                      prove the rules still hold
-    python vq.py init    <project>             START HERE on a new project
+    python vq.py init    <project> [--no-hooks]  START HERE on a new project
+    python vq.py hooks   <project> [on|off]    the Claude Code hooks on their own
     python vq.py install <project>             copy the files only, no CLAUDE.md
     python vq.py package <dest>                a clean copy to hand to someone else
 
@@ -228,6 +229,10 @@ python tools/vharness/vq.py ops    .            what a screen costs per day
 python tools/vharness/vq.py push   . <package>  push with every gate
 ```
 
+Hooks in `.claude/settings.local.json` read back every VIA write of VAIL as it
+happens, and check that this session's writes still compile before it ends. When
+one reports a compile error, fix the error. Do not work around the hook.
+
 `tools/vharness/NOTES.md` records %d platform behaviours, each with the error
 text that earned it. Read it before debugging something that "should work":
 most of them are not things a linter can catch, and roughly two thirds have no
@@ -257,7 +262,7 @@ def _behaviour_count():
     return int(cells[-1]) if cells else None
 
 
-def cmd_init(project):
+def cmd_init(project, *flags):
     """Set a project up so Claude knows the harness exists. Start here.
 
     `install` copies the files; that is necessary and not sufficient. A harness
@@ -301,18 +306,64 @@ def cmd_init(project):
     _io.open(path, "w", encoding="utf-8", newline="\n").write(merged)
     print("%s CLAUDE.md" % verb)
 
+    hooked = False
+    if "--no-hooks" not in flags:
+        hooked = _install_hooks(project)
+
     print("")
     print("next, in this order:")
     print("  1. read tools/vharness/NOTES.md            (install nothing, costs a tab)")
     print("  2. python tools/vharness/vq.py check .     (read-only, writes nothing)")
     print("  3. start Claude Code here; the CLAUDE.md is picked up automatically")
+    if hooked:
+        print("  4. every VIA write of VAIL is now read back as it happens. To switch the")
+        print("     hooks off: set VQ_HOOKS=off, or run  vq.py hooks . off")
     return 0
+
+
+def _install_hooks(project, remove=False):
+    """Install or remove the Claude Code hooks; report, never crash init over them."""
+    import hooks
+    try:
+        path = hooks.install(project, remove=remove)
+    except VantiqError as exc:
+        print("hooks not %s: %s" % ("removed" if remove else "installed", exc))
+        return False
+    rel = os.path.relpath(path, project)
+    if remove:
+        print("removed the harness hooks from %s" % rel)
+        return False
+    names = hooks.vantiq_connection_names(project)
+    print("installed Claude Code hooks in %s, checking VIA writes through: %s"
+          % (rel, ", ".join(names) if names else "any server named like Vantiq"))
+    return True
+
+
+def cmd_hooks(project, state="on"):
+    """The hooks on their own: `on` installs or refreshes them, `off` removes them.
+
+    Only this harness's entries are touched; anything else in the settings file,
+    including other hooks, is kept.
+    """
+    if state not in ("on", "off"):
+        raise SystemExit("hooks takes `on` or `off`, not %r" % state)
+    if state == "on" and not os.path.exists(
+            os.path.join(project, "tools", "vharness", "hooks.py")):
+        raise SystemExit("no tools/vharness in %s; run `vq.py init` there first" % project)
+    ok = _install_hooks(project, remove=(state == "off"))
+    return 0 if (ok or state == "off") else 1
 
 
 def cmd_install(project):
     """Copy the harness into a project that has never seen it."""
     import shutil
     dest = os.path.join(project, "tools", "vharness")
+    # Re-running init from the project's own vendored copy would copy each file
+    # onto itself, which shutil refuses with SameFileError. Nothing to copy.
+    if os.path.abspath(dest) == os.path.abspath(HERE):
+        print("already running from %s; files left as they are"
+              % os.path.relpath(dest, project))
+        return 0
     os.makedirs(dest, exist_ok=True)
     n = 0
     for fn in sorted(os.listdir(HERE)):
@@ -358,7 +409,7 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 145 assertions, proves the rules hold")
+    print("  python vq.py selftest              # 172 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder where Claude Code uses VIA")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")
@@ -367,7 +418,7 @@ def cmd_package(dest):
 
 COMMANDS = {"package": cmd_package, "check": cmd_check, "ui": cmd_ui, "push": cmd_push, "ops": cmd_ops,
             "health": cmd_health, "selftest": cmd_selftest, "install": cmd_install,
-            "init": cmd_init}
+            "init": cmd_init, "hooks": cmd_hooks}
 
 
 def main(argv):

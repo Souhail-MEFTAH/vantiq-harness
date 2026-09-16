@@ -118,6 +118,41 @@ def _pick_vantiq(servers):
     return ranked[0][1], ranked[0][2]
 
 
+def _scopes(project, home):
+    """[(scope, servers, origin)] in Claude Code's precedence, most specific first."""
+    user_file = os.path.join(home, ".claude.json")
+    project_file = os.path.join(project, ".mcp.json")
+    user_cfg = _load_json(user_file) or {}
+    project_cfg = _load_json(project_file) or {}
+    local_servers = None
+    for key, entry in (user_cfg.get("projects") or {}).items():
+        if _same_dir(key, project):
+            local_servers = (entry or {}).get("mcpServers")
+            break
+    return [("local", local_servers, user_file),
+            ("project", project_cfg.get("mcpServers"), project_file),
+            ("user", user_cfg.get("mcpServers"), user_file)]
+
+
+def _connect(scope, name, entry, origin, env):
+    """A usable connection from one config entry, or VantiqError saying why not."""
+    where = "the Vantiq connection '%s' (%s scope, %s)" % (name, scope, origin)
+    auth = (entry.get("headers") or {}).get("Authorization")
+    if not auth:
+        raise VantiqError(
+            "%s has no Authorization header, so there is no token for the harness "
+            "to read back with. Add one to that connection; in a shared .mcp.json, "
+            "`Bearer ${VANTIQ_TOKEN}` keeps the token itself out of the repository."
+            % where)
+    token = _expand(auth, env, where).split(None, 1)[-1].strip()
+    parts = urllib.parse.urlsplit(_expand(entry["url"], env, where))
+    if not parts.scheme or not parts.netloc:
+        raise VantiqError("%s has no usable url" % where)
+    return {"server": "%s://%s" % (parts.scheme, parts.netloc), "token": token,
+            "scope": scope, "name": name, "origin": origin, "host": parts.netloc,
+            "others": []}
+
+
 def find_connection(project=None, home=None, env=None):
     """The Vantiq VIA connection Claude Code uses in `project`, found the same way.
 
@@ -147,21 +182,9 @@ def find_connection(project=None, home=None, env=None):
     home = home or os.path.expanduser("~")
     env = os.environ if env is None else env
 
-    user_file = os.path.join(home, ".claude.json")
-    project_file = os.path.join(project, ".mcp.json")
-    user_cfg = _load_json(user_file) or {}
-    project_cfg = _load_json(project_file) or {}
-
-    local_servers = None
-    for key, entry in (user_cfg.get("projects") or {}).items():
-        if _same_dir(key, project):
-            local_servers = (entry or {}).get("mcpServers")
-            break
-
+    scopes = _scopes(project, home)
     found = []
-    for scope, servers, origin in (("local", local_servers, user_file),
-                                   ("project", project_cfg.get("mcpServers"), project_file),
-                                   ("user", user_cfg.get("mcpServers"), user_file)):
+    for scope, servers, origin in scopes:
         pick = _pick_vantiq(servers)
         if pick:
             found.append((scope, pick[0], pick[1], origin))
@@ -170,27 +193,47 @@ def find_connection(project=None, home=None, env=None):
             "no Vantiq VIA connection for %s. Looked where Claude Code looks: "
             "local scope in %s, the project's %s, and user scope in %s. Connect "
             "Claude Code to VIA first: https://<your-vantiq-host>/mcp/%s"
-            % (project, user_file, project_file, user_file, VIA_PATH))
+            % (project, scopes[0][2], scopes[1][2], scopes[2][2], VIA_PATH))
 
     scope, name, entry, origin = found[0]
-    where = "the Vantiq connection '%s' (%s scope, %s)" % (name, scope, origin)
-    auth = (entry.get("headers") or {}).get("Authorization")
-    if not auth:
-        raise VantiqError(
-            "%s has no Authorization header, so there is no token for the harness "
-            "to read back with. Add one to that connection; in a shared .mcp.json, "
-            "`Bearer ${VANTIQ_TOKEN}` keeps the token itself out of the repository."
-            % where)
-    token = _expand(auth, env, where).split(None, 1)[-1].strip()
-    parts = urllib.parse.urlsplit(_expand(entry["url"], env, where))
-    if not parts.scheme or not parts.netloc:
-        raise VantiqError("%s has no usable url" % where)
+    conn = _connect(scope, name, entry, origin, env)
+    conn["others"] = [{"scope": s, "name": n,
+                       "host": urllib.parse.urlsplit(e["url"]).netloc}
+                      for s, n, e, _o in found[1:]]
+    return conn
 
-    others = [{"scope": s, "name": n, "host": urllib.parse.urlsplit(e["url"]).netloc}
-              for s, n, e, _o in found[1:]]
-    return {"server": "%s://%s" % (parts.scheme, parts.netloc), "token": token,
-            "scope": scope, "name": name, "origin": origin, "host": parts.netloc,
-            "others": others}
+
+def find_connection_named(name, project=None, home=None, env=None):
+    """The connection Claude Code knows by `name`, from its most specific scope.
+
+    A hook knows exactly which server Claude wrote through - it is in the tool
+    name, mcp__<server>__<tool> - so it reads back through that one rather than
+    through whichever Vantiq connection find_connection() would prefer. The two
+    differ precisely when a folder loads two Vantiq connections to different
+    hosts, which is the case where reading back through the wrong one reports a
+    clean result from a namespace nothing was written to.
+    """
+    project = os.path.abspath(project or os.getcwd())
+    home = home or os.path.expanduser("~")
+    env = os.environ if env is None else env
+    for scope, servers, origin in _scopes(project, home):
+        entry = (servers or {}).get(name)
+        if isinstance(entry, dict) and entry.get("url"):
+            return _connect(scope, name, entry, origin, env)
+    raise VantiqError("no MCP connection named '%s' for %s at local, project or "
+                      "user scope" % (name, project))
+
+
+def vantiq_connection_names(project=None, home=None):
+    """Every server name, at any scope, that counts as a Vantiq connection here."""
+    project = os.path.abspath(project or os.getcwd())
+    home = home or os.path.expanduser("~")
+    names = set()
+    for _scope, servers, _origin in _scopes(project, home):
+        for n, e in (servers or {}).items():
+            if _pick_vantiq({n: e}):
+                names.add(n)
+    return sorted(names)
 
 
 def describe_connection(conn):
