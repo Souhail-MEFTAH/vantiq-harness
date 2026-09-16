@@ -552,12 +552,12 @@ def rule_package(text, code, ctx):
 
 # ---------------------------------------------------------------------------
 # Rules below arrived from the pooled professional-services learnings of
-# 2026-09. Three developers audited their own Claude Code history independently
-# and filed 140 entries between them; these are the ones a static check can
-# catch. The id in each docstring (DM-nn, NR-nn, PS-nn) is the entry in
+# 2026-09. Four developers audited their own Claude Code history independently
+# and filed 151 entries between them; these are the ones a static check can
+# catch. The id in each docstring (DM-nn, NC-nn, NR-nn, PS-nn) is the entry in
 # learnings/, where the full evidence and its provenance live.
 #
-# Entries corroborated by more than one of the three are the strongest signal in
+# Entries corroborated by more than one contributor are the strongest signal in
 # the whole corpus, and they are marked as such.
 # ---------------------------------------------------------------------------
 

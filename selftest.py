@@ -851,7 +851,7 @@ def ops_cases():
 
 
 def ui_cases():
-    """NR-20 and PS-22: the same defect found by two teams two months apart."""
+    """NR-20 and PS-22: the same defect, found separately by two contributors."""
     from uilint import check_page
     out = []
     subscribing = ('const ws = new WebSocket(u);\n'

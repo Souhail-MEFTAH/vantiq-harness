@@ -116,11 +116,11 @@ def rule_grid_min_width(text):
 def rule_topic_subscription(text):
     """A browser subscribed to a TOPIC does not receive what VAIL publishes to it.
 
-    Two teams, two namespaces, two months apart, neither aware of the other. It
-    is the most corroborated entry in the pooled learnings and it is the most
-    expensive one to find, because every part of it works: the rule fires, its
-    other effects happen, the subscribe frame is acknowledged, and no error is
-    raised anywhere.
+    Found separately by two contributors on two different projects, four days
+    apart (26 and 30 August 2026), and one of them recorded it as costing a day
+    or more. It is hard to find because every part of it works: the rule fires,
+    its other effects happen, the subscribe frame is acknowledged, and no error
+    is raised anywhere.
 
     NR-20 probed it at the socket: the subscribe frame came back acknowledged
     with `"topic":"/topics/triage/escalations"`, the `INSERT status: 200`, then
