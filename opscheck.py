@@ -119,7 +119,7 @@ def scheduled(client):
 def scheduled_faults(row):
     """Everything wrong with one scheduledevents record, as a list of strings.
 
-    Four separate entries from the pooled learnings, all on the same resource,
+    Three separate entries from the pooled learnings, all on the same resource,
     and every one of them fails in a way that leaves the event LOOKING fine.
 
       NR-38, verified live on dev.vantiq.com. The create body is

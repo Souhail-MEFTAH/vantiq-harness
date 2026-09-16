@@ -9,12 +9,13 @@ behaviour nobody wrote down. This is how we get it out and pool it.
 python mine_sessions.py --out candidates.md
 ```
 
-Run this first, from anywhere. It walks your Claude Code history and produces a
-redacted pile of candidates, and it prints a census of the credentials sitting in
-your transcripts. On the machine it was built against that census read: 3,701
-Vantiq tokens across 92 transcripts, 63 JWTs, and an Anthropic API key someone
-had pasted into a session. **Read that census. Rotate anything live.** The report
-the script writes is redacted; your transcripts are not.
+Run this first, from the folder you cloned this repository into. It walks your
+Claude Code history and produces a redacted pile of candidates, and it prints a
+census of the credentials sitting in your transcripts. On the machine it was
+built against that census read: 3,701 Vantiq tokens across 92 transcripts, 63
+JWTs, and an Anthropic API key someone had pasted into a session. **Read that
+census. Rotate anything live.** The report the script writes is redacted; your
+transcripts are not.
 
 Then paste the prompt below into Claude Code in the same directory. Expect twenty
 to forty minutes. Then open a pull request against this repository adding your
@@ -170,5 +171,5 @@ Entries land in one of three places, and the split is deliberate:
 - **Not yet triaged.** Nobody has decided. This list exists on purpose. It shrinks
   or it explains itself.
 
-About a fifth of what has been collected so far turned out to be checkable. That
+About a third of what has been collected so far turned out to be checkable. That
 ratio is normal and is not a reason to file fewer entries.

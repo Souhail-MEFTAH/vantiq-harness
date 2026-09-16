@@ -4,7 +4,7 @@ The platform's failure signature is uniform: the write returns HTTP 200 and
 something is broken somewhere else, or later. Everything here exists to replace
 that 200 with a real answer.
 
-Four things this encodes that cost us time to learn:
+Among the things this encodes, each of which cost time to learn:
 
   * An error can arrive INSIDE a success envelope, shaped like a result set.
     `[{"code": ..., "message": ...}]` is not one row. Counting it as data was
@@ -24,7 +24,6 @@ Four things this encodes that cost us time to learn:
 import json
 import os
 import re
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -507,7 +506,7 @@ class Client(object):
     def namespace(self):
         """The namespace this TOKEN authenticates to, read off a real record.
 
-        Two entries, from two teams, and the same failure both times: the
+        Two entries, from two contributors, and the same failure both times: the
         namespace you believe you are in is not a property of anything you
         configured.
 

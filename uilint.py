@@ -5,10 +5,10 @@ store serves each file from its own URL and a page that references ./app.js find
 nothing. That constraint makes them large, hand-edited and easy to break in ways
 nobody notices until a customer is watching.
 
-Every rule below is a defect that shipped in one of the seven demos. The
-expensive ones all share a shape: the console renders something plausible while
-being wrong, so the failure reads as "the demo has no data" or "the click did
-nothing" rather than as an error.
+Every rule below is a defect that shipped, in one of the seven demos or in a
+project behind the pooled learnings. The expensive ones all share a shape: the
+console renders something plausible while being wrong, so the failure reads as
+"the demo has no data" or "the click did nothing" rather than as an error.
 """
 import re
 
@@ -47,7 +47,7 @@ def rule_hardcoded_endpoint(text):
         out.append(Finding("hardcoded-endpoint", line_of(text, m.start()),
                            "absolute Vantiq host `%s` assigned in the page; it will "
                            "survive an import and point the console at the namespace "
-                           "it came from." % m.group(1), line))
+                           "it came from." % m.group(1), line, note="DF-03"))
     return out
 
 
@@ -82,7 +82,7 @@ def rule_swallowed_refusal(text):
             out.append(Finding("swallowed-refusal", line_of(text, m.start()),
                                "a fetch whose failure is never inspected; a server "
                                "refusal will render as success.",
-                               line_text(text, m.start())))
+                               line_text(text, m.start()), note="DF-09"))
     return out
 
 
@@ -109,7 +109,7 @@ def rule_grid_min_width(text):
                            "children sizes to the widest min-content" +
                            (" and overflow-x:hidden will cut the excess with no "
                             "scrollbar." if hides else "."),
-                           line_text(text, m.start())))
+                           line_text(text, m.start()), note="DF-19"))
     return out
 
 
@@ -155,7 +155,7 @@ def rule_topic_subscription(text):
                            "`PUBLISH ... TO TOPIC` is not delivered to socket "
                            "subscribers. Subscribe to /types/<fq>/insert|update "
                            "and write the row instead." % m.group(1),
-                           line_text(text, m.start())))
+                           line_text(text, m.start()), note="NR-20"))
     return out
 
 
@@ -186,7 +186,7 @@ def rule_mojibake(text):
     for m in re.finditer(u"[âÃÂ][-ÿ‘-”€]", text):
         out.append(Finding("mojibake", line_of(text, m.start()),
                            "UTF-8 read as CP1252; this reaches the screen.",
-                           line_text(text, m.start())))
+                           line_text(text, m.start()), note="DF-22"))
     return out
 
 

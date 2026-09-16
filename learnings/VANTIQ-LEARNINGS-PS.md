@@ -1,11 +1,11 @@
+# VANTIQ-LEARNINGS-PS
+
 > **Redacted for public release.** This file was written for internal pooling
 > and is published with customer, namespace and deployment identifiers removed.
 > Angle-bracket placeholders (`<pkg>`, `<ns>`, `<namespace>`, `<deployment>`,
 > `<installation>`, `<backend repo>`) stand in for names that were here. Vantiq
 > platform error codes and `dev.vantiq.com` are kept verbatim, because they are
 > what you would search for.
-
-# VANTIQ-LEARNINGS-PS
 
 ### VAIL rule resource names cannot contain a dot
 

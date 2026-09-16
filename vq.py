@@ -3,7 +3,7 @@
     python vq.py check   <project> [package]   lint what is deployed
     python vq.py ui      <project> [--house]   lint the console(s)
     python vq.py push    <project> <package>   the full pipeline, with gates
-    python vq.py ops     <project> <package> [ReadModel ...]
+    python vq.py ops     <project> [package] [ReadModel ...]
     python vq.py health  <project> [package]   compile state, both levels
     python vq.py selftest                      prove the rules still hold
     python vq.py init    <project>             START HERE on a new project
@@ -108,7 +108,8 @@ def cmd_ui(project, *flags):
         print("  %s" % rel)
         for f in fs:
             total[f.rule] += 1
-            print("      :%-5d %-20s %s" % (f.line, f.rule, f.message[:80]))
+            note = (" [note %s]" % f.note) if f.note else ""
+            print("      :%-5d %-20s %s%s" % (f.line, f.rule, f.message[:80], note))
     print("\n%s" % (dict(total) if total else "clean"))
     return 1 if total else 0
 
@@ -357,7 +358,7 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 142 assertions, proves the rules hold")
+    print("  python vq.py selftest              # 145 assertions, proves the rules hold")
     print("  python vq.py check <project>       # a folder where Claude Code uses VIA")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")

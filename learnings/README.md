@@ -44,8 +44,9 @@ have been:
   code. The `PUBLIC` half was cleanly isolated and is a rule; the `PRIVATE` half
   was a guess.
 
-Then sweep it. `check_tree` over a codebase you did not write is what found all
-three, and it took one run.
+Then test it against code you did not write. The self-test's collateral check
+caught the first of those, a sweep over seven demos caught the rest, and neither
+took long.
 
 ## Adding yours
 

@@ -1,9 +1,10 @@
 """Static checks on VAIL source, one rule per trap that has actually cost us.
 
-Every rule here exists because the platform accepted the code and something
-broke somewhere else, or later. None of them is a style preference. The docstring
-on each rule records the incident, because a guard whose reason is forgotten gets
-deleted the first time it is inconvenient.
+Every rule here exists because code got past every check at hand and broke
+anyway: on save with an error that points nowhere, somewhere else, or later.
+None of them is a style preference. The docstring on each rule records the
+incident, because a guard whose reason is forgotten gets deleted the first time
+it is inconvenient.
 
 Rules run against a position-preserving view with strings and comments blanked
 (see source.blank), so a rule never matches its own example in a comment.
@@ -187,7 +188,8 @@ def rule_reserved_var(text, code, ctx):
                            "`%s` is a statement keyword; as a variable name it breaks "
                            "the parser at its use site with an error pointing at the "
                            "wrong line." % m.group(1),
-                           line_text(text, m.start()), note="SC-A02"))
+                           line_text(text, m.start()),
+                           note="NR-06" if m.group(1) == "match" else "SC-A02"))
     for name, offset in _params(code):
         if name in RESERVED or name in RESERVED_PARAM:
             out.append(Finding("reserved-var", line_of(text, offset),
@@ -195,7 +197,8 @@ def rule_reserved_var(text, code, ctx):
                                "rejects the declaration ("
                                "\"illegal parameter name\") and validateVAIL does "
                                "not catch it." % name,
-                               line_text(text, offset), note="SC-A02"))
+                               line_text(text, offset),
+                               note="NR-05" if name in RESERVED_PARAM else "SC-A02"))
     return out
 
 
@@ -498,7 +501,7 @@ def rule_mojibake(text, code, ctx):
         out.append(Finding("mojibake", line_of(text, m.start()),
                            "UTF-8 read as CP1252 and stored in the source; this "
                            "travels into the database and onto the screen.",
-                           line_text(text, m.start()), note=None))
+                           line_text(text, m.start()), note="DF-22"))
     return out
 
 
@@ -610,7 +613,7 @@ def rule_topic_package(text, code, ctx):
             "is prepended to the WHEN path, the binding stops matching, and the "
             "rule silently never fires. Create topic-triggered rules with no "
             "package line." % topic.group(1),
-            line_text(text, pkg.start())))
+            line_text(text, pkg.start()), note="PS-02"))
     return out
 
 
@@ -665,7 +668,7 @@ def rule_unimported_topic(text, code, ctx):
             "`import topic`; the package is prepended silently, so publisher "
             "and subscriber can land on different topics with no error."
             % topic.group(1),
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NR-18"))
     return out
 
 
@@ -706,7 +709,7 @@ def rule_unimported_system_service(text, code, ctx):
             "`import service %s`; it resolves into this package, the compile "
             "fails, and a rule with a compile error runs silently never."
             % (svc, svc),
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NR-17"))
     return out
 
 
@@ -750,7 +753,7 @@ def rule_bare_array_type(text, code, ctx):
                 "type it parses as a reference to a custom type named `Array` "
                 "in this package. Write `%s <Element> Array`."
                 % (words[0], words[0]),
-                line_text(text, pos)))
+                line_text(text, pos), note="NR-07"))
         pos += len(part) + 1
     ret = re.match(r"\s*:\s*(Array|void)\b", code[end + 1:])
     if ret:
@@ -760,7 +763,7 @@ def rule_bare_array_type(text, code, ctx):
             "type name, and binding fails with \"The type '%s' ... could not be "
             "found\". Omit the return type, or use `Object`."
             % (ret.group(1), ret.group(1)),
-            line_text(text, end)))
+            line_text(text, end), note="NC-04"))
     return out
 
 
@@ -799,7 +802,7 @@ def rule_missing_return_colon(text, code, ctx):
         "parser fails with a bare `com.accessg2.ag2rs.parse.errors` carrying no "
         "line number, and validateVAIL reports nothing."
         % (m.group(1), m.group(1)),
-        line_text(text, end))]
+        line_text(text, end), note="NC-01")]
 
 
 def rule_end_terminator(text, code, ctx):
@@ -813,7 +816,7 @@ def rule_end_terminator(text, code, ctx):
     return [Finding("end-terminator", line_of(text, m.start()),
                     "a trailing `END` does not terminate a VAIL procedure body "
                     "and is a parse error; delete it.",
-                    line_text(text, m.start()))
+                    line_text(text, m.start()), note="NC-01")
             for m in re.finditer(r"^[ \t]*END[ \t]*$", code, re.M)]
 
 
@@ -837,7 +840,7 @@ def rule_public_modifier(text, code, ctx):
                     "`PUBLIC` is not a VAIL visibility modifier and is a parse "
                     "error; procedures are callable by default, so remove it. "
                     "(`PRIVATE` is real and unaffected.)",
-                    line_text(text, m.start()))
+                    line_text(text, m.start()), note="NC-02")
             for m in re.finditer(r"^[ \t]*PUBLIC[ \t]+(?=(?:\w+[ \t]+)*PROCEDURE\b)",
                                  code, re.M | re.I)]
 
@@ -860,7 +863,7 @@ def rule_insert_object_literal(text, code, ctx):
                     "`INSERT {...} INTO Type` is a parse error (\"'{' "
                     "encountered when parsing VAIL name\"); write "
                     "`INSERT Type(field: value, ...)`.",
-                    line_text(text, m.start()))
+                    line_text(text, m.start()), note="NC-07")
             for m in re.finditer(r"\bINSERT\s*\{", code, re.I)]
 
 
@@ -897,7 +900,7 @@ def rule_when_alias(text, code, ctx):
             "this WHEN binds no payload alias but the body reads `event.`; the "
             "payload is not implicitly named `event` and this fails at bind "
             "with \"use of undeclared variable 'event'\". Add `AS event`.",
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NC-05"))
     return out
 
 
@@ -929,7 +932,7 @@ def rule_modifier_on_standalone(text, code, ctx):
         "`%s` is a standalone procedure (no `Service.` in its name) and carries "
         "the modifier(s) %s; modifiers are only legal on service procedures."
         % (m.group(1), ", ".join("`%s`" % w for w in mods)),
-        line_text(text, m.start()))]
+        line_text(text, m.start()), note="NR-08")]
 
 
 # Methods that BIND and then throw, because a VAIL DateTime is a raw
@@ -967,13 +970,13 @@ def rule_instant_method(text, code, ctx):
             "DateTime is; it compiles and throws MissingMethodException at "
             "execution. Use toEpochMilli() and millisecond arithmetic."
             % m.group(1),
-            line_text(text, m.start()), note=None))
+            line_text(text, m.start()), note="NR-09"))
     for m in re.finditer(r"\btoInteger\s*\(\s*now\s*\(\s*\)", code):
         out.append(Finding(
             "instant-method", line_of(text, m.start()),
             "`toInteger(now())` throws: now() is a java.time.Instant. Use "
             "`now().toEpochMilli()`.",
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NR-09"))
     return out
 
 
@@ -1014,14 +1017,15 @@ def rule_missing_builtin(text, code, ctx):
                 "`%s()` is not a VAIL builtin; unqualified, it resolves to a "
                 "procedure in this package that does not exist. %s."
                 % (name, advice),
-                line_text(text, m.start())))
+                line_text(text, m.start()),
+                note="DM-05" if "base64" in name.lower() else "PS-04"))
     for m in re.finditer(r"(?<![\w.])(?:Base64\s*\.\s*encode|"
                          r"Utils\s*\.\s*base64Encode)\s*\(", code):
         out.append(Finding(
             "missing-builtin", line_of(text, m.start()),
             "the base64 builtin is `Encode.base64(...)`; this spelling fails to "
             "compile (DM-05 probed four of them).",
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="DM-05"))
     return out
 
 
@@ -1082,7 +1086,7 @@ def rule_exception_placeholder(text, code, ctx):
                 "`exception()` uses Java MessageFormat placeholders; a bare `{}` "
                 "raises \"can't parse argument number\" and REPLACES the message "
                 "you wrote. Use `{0}`, `{1}`.",
-                line_text(text, m.start())))
+                line_text(text, m.start()), note="DM-04"))
     return out
 
 
@@ -1146,7 +1150,7 @@ def rule_where_method_call(text, code, ctx):
             "this binds as a missing procedure path. Filter after the query, or "
             "use `WITH where = {...}` with $regex."
             % call.group(0).strip().rstrip("("),
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NR-12"))
     return out
 
 
@@ -1183,7 +1187,7 @@ def rule_dollar_operator_collapse(text, code, ctx):
             "`$and` of single-operator objects."
             % (", ".join("`%s`" % k for _o, k in found),
                ", ".join(str(line_of(text, o)) for o, _k in found)),
-            line_text(text, found[0][0])))
+            line_text(text, found[0][0]), note="NR-22"))
     return out
 
 
@@ -1217,7 +1221,7 @@ def rule_dynamic_source(text, code, ctx):
             "is resolved at compile time and the variable's value is never "
             "read. One procedure per source binding."
             % (m.group(1), m.group(1)),
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="DM-01"))
     return out
 
 
@@ -1280,7 +1284,7 @@ def cross_file(files):
                 out.append((path, Finding(
                     "private-cross-service", line_of(text, m.start()),
                     "`%s.%s` is PRIVATE to %s and cannot be called from %s."
-                    % (other, proc, other, svc), line_text(text, m.start()))))
+                    % (other, proc, other, svc), line_text(text, m.start()), note="PS-13")))
         for finding in _chained_calls(text, code, known):
             out.append((path, finding))
     return out
@@ -1332,7 +1336,7 @@ def _chained_calls(text, code, known):
             "chained onto it in the same statement; the compiler reports the "
             "column of the chained call, not of the invocation. Assign it to a "
             "variable first." % (m.group(1), m.group(2)),
-            line_text(text, m.start())))
+            line_text(text, m.start()), note="NR-03"))
     return out
 
 
@@ -1371,9 +1375,9 @@ def check_namespace(client, package):
 
     This is the common case, not the exception. Of the Vantiq projects on this
     machine, one keeps VAIL in src/procedures/ and at least three others (527,
-    657 and 501 procedures) are built directly in the namespace through the MCP
-    server and have no .vail files at all. A harness that can only read a source
-    tree is a harness for one project.
+    657 and 501 procedures) are built directly in the namespace through VIA and
+    have no .vail files at all. A harness that can only read a source tree is a
+    harness for one project.
 
     Returns {fqn: [Finding]}. The name and package checks are skipped: there is
     no path to disagree with, and the package is implied by serviceName.

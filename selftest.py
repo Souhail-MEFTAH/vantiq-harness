@@ -1093,6 +1093,55 @@ def copy_cases():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def citation_cases():
+    """Every note a finding prints is an id NOTES.md actually has.
+
+    `vq.py check` prints `[note SC-A06]` beside a finding so the reader can look
+    it up. Those values were once the original author's loose count of an
+    unnumbered block, off by one from the sixth note on, and every rule added
+    from the pooled learnings printed no note at all. Both are held here: a
+    cited id must exist, and a rule that came from a recorded learning must
+    cite it. The rules allowed to print none are structural checks with no
+    single incident behind them.
+    """
+    import re as _re
+    here = os.path.dirname(os.path.abspath(__file__))
+    notes = io.open(os.path.join(here, "NOTES.md"), encoding="utf-8").read()
+    ids = set(_re.findall(r"(?m)^(?:\| |- )([A-Z]{2}-[A-Z]?\d{2})\b", notes))
+    structural = {"duplicate-key", "unquoted-key", "name-mismatch",
+                  "no-package", "no-signature"}
+
+    printed, uncited = set(), set()
+    for c in CASES:
+        name, body, rule, should_fire = c[:4]
+        if not should_fire:
+            continue
+        expect = c[4] if len(c) > 4 else "Svc.thing"
+        head = c[5] if len(c) > 5 else HEAD
+        for f in check_text(head + body, expect):
+            if f.rule != rule:
+                continue
+            if f.note:
+                printed.add(f.note)
+            elif rule not in structural:
+                uncited.add(rule)
+
+    written = set()
+    for module in ("lint.py", "uilint.py"):
+        src = io.open(os.path.join(here, module), encoding="utf-8").read()
+        written |= set(_re.findall(r'"((?:DM|NC|NR|PS|SC|DF)-[A-Z]?\d{2})"', src))
+
+    return [
+        ("every note a lint finding prints is an id in NOTES.md",
+         printed and printed <= ids),
+        ("every rule from a recorded learning cites it (uncited: %s)"
+         % (", ".join(sorted(uncited)) or "none"), not uncited),
+        ("every id written into lint.py and uilint.py exists in NOTES.md "
+         "(missing: %s)" % (", ".join(sorted(written - ids)) or "none"),
+         written <= ids),
+    ]
+
+
 def main():
     failures = 0
     print("rule cases")
@@ -1121,7 +1170,8 @@ def main():
             failures += 1
         print("  %s %s" % ("ok  " if ok else "FAIL", name))
 
-    for label, fn in (("tree layouts", tree_cases),
+    for label, fn in (("citations", citation_cases),
+                      ("tree layouts", tree_cases),
                       ("VIA connection", connection_cases),
                       ("copies", copy_cases),
                       ("REST traps", client_cases),
