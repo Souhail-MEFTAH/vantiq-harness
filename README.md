@@ -1,8 +1,20 @@
 # vantiq-harness
 
-Tooling for building on Vantiq, assembled from what seven flagship demos cost us
-to learn, and from what four professional-services developers found when they
-audited their own session history for the same thing.
+A harness for building on Vantiq with [Claude Code](https://claude.com/claude-code)
+through **Vantiq VIA**, the platform's MCP server.
+
+VIA lets Claude build straight into a namespace, and that is where the time goes:
+VIA reports success, and what Claude built is still broken. The service does not
+compile, or something fails later, somewhere else. This harness makes Claude check
+its own work instead of trusting that response. It lints what is actually
+deployed, confirms compile state at the procedure *and* the service level, has
+Claude verify by calling what it built rather than by reading a status code, and
+carries the platform behaviours that explain why something that should work does
+not.
+
+It was assembled from what seven flagship demos built with Claude Code on VIA cost
+us to learn, and from what four professional-services developers found when they
+audited their own Claude Code sessions for the same thing.
 
 **224 recorded behaviours, 76 of them enforced by a check.** See `NOTES.md`,
 which is generated and lists the other 148 honestly rather than implying
@@ -19,9 +31,16 @@ coverage.
 ## Start here
 
 **You need:** Python 3.6 or later (standard library only, nothing to `pip
-install`), [Claude Code](https://claude.com/claude-code), and a Vantiq project
-folder whose `.mcp.json` names a Vantiq server — which the MCP integration
-already writes.
+install`), [Claude Code](https://claude.com/claude-code), and Claude Code connected
+to Vantiq VIA, the MCP server at
+`https://<your-vantiq-host>/mcp/io.vantiq.via.mcpServer`. Any scope works: a
+project `.mcp.json`, or a connection added with `claude mcp add` at local or user
+scope. The harness finds the connection where Claude Code does and uses the same
+token for its own read-back checks, so there is nothing else to configure.
+
+If your team commits `.mcp.json`, keep the token out of it with
+`"Authorization": "Bearer ${VANTIQ_TOKEN}"`. Claude Code expands `${VAR}` and
+`${VAR:-default}` there, and so does the harness.
 
 **New Vantiq project, first session.** Get the harness once:
 
@@ -46,8 +65,8 @@ claude
 `init` vendors the harness into the project's `tools/vharness` **and** writes the
 `CLAUDE.md` section that tells Claude it exists. Claude Code reads that on the
 first turn, so the doctrine is in context before you type anything — you never
-have to remember to mention it. If the `.mcp.json` is missing, `init` says so and
-explains what one is.
+have to remember to mention it. If it cannot find a VIA connection for the project
+at any scope, `init` says where it looked.
 
 On macOS and most Linux distributions the interpreter is `python3`; use that
 wherever this README says `python`.
@@ -58,8 +77,8 @@ at all, and `python vq.py check <project>` only reads. Full walkthrough in
 
 ## The problem it exists for
 
-Almost every hour lost on this platform had one shape: **the write returns HTTP
-200 and something is broken somewhere else, or later.**
+Almost every hour lost building on Vantiq with Claude Code and VIA had one shape:
+**the write succeeds and something is broken somewhere else, or later.**
 
 - A parameter added to a procedure on an interface-declaring service. 200. The
   procedure reads `vailErrors: null`. Every *other* procedure in that service
@@ -115,13 +134,20 @@ If you only ever do this, the harness has paid for itself.
 python vq.py check <project>
 ```
 
-`<project>` is any folder holding a `.mcp.json` with a Vantiq server entry -
-what the MCP integration already writes. No writes, no config, no arguments:
-the application package is discovered from the namespace itself.
+`<project>` is the folder you run Claude Code in. The harness uses the VIA
+connection Claude Code uses there - local scope first, then the project's
+`.mcp.json`, then user scope - and prints which one, so you always know which
+namespace it is reading. No writes, no config, no arguments: the application
+package is discovered from the namespace itself.
 
-Most Vantiq projects have **no local VAIL at all** - three on the machine this
-was built from hold 527, 657 and 501 procedures and not one `.vail` file - so by
-default this lints what is *deployed*. If a `src/procedures/` tree exists it
+If Claude Code also loads a second Vantiq connection in that folder, pointing at a
+different host, the harness says so. Claude could be writing through either one,
+and a write lands in whatever namespace its token belongs to.
+
+Projects built through VIA usually have **no local VAIL at all**, because Claude
+writes straight into the namespace - three on the machine this was built from
+hold 527, 657 and 501 procedures and not one `.vail` file - so by default this
+lints what is *deployed*. If a `src/procedures/` tree exists it
 lints that instead, and it understands both the hand-maintained layout and the
 Vantiq exporter's.
 
@@ -177,7 +203,7 @@ first three had missed.
 ### Running the tool on itself
 
 ```bash
-python selftest.py                      # 130 assertions, run after any rule change
+python selftest.py                      # 142 assertions, run after any rule change
 python notes_index.py                   # maintainers: regenerate NOTES.md
 python vq.py install <project>          # vendor into a project's tools/vharness
 ```
@@ -197,10 +223,10 @@ check_namespace(Client(repo="<project>"), "com.example.app")
 | `source.py` | Position-preserving view with strings and comments blanked. Everything else builds on it. |
 | `lint.py` | 29 static rules on VAIL, one per trap that has actually cost us. Reads a source tree **or a live namespace**. |
 | `uilint.py` | 7 rules on a hosted console, all of them defects that shipped. |
-| `client.py` | A client that treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
+| `client.py` | Finds the VIA connection the way Claude Code does, at local, project or user scope. Treats an error inside a 200 as an error, and knows the paths that look plausible and are wrong. |
 | `push.py` | lint, snapshot, drift, push, interface, vailErrors, smoke, report. |
 | `opscheck.py` | What a screen costs per poll, and per day with nobody watching. Also what is scheduled, and what it is firing into. |
-| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 130 assertions. |
+| `selftest.py` | Proves every rule fires on the real failure and stays quiet on the near-miss. 142 assertions. |
 | `notes_index.py` | Builds `NOTES.md` from the demo series and from `learnings/`. Maintainers only: it needs the demo-series documents. |
 | `mine_sessions.py` | Walks your own Claude Code history for candidate learnings, redacts credentials, and prints a census of the ones it found. |
 | `learnings/` | The pooled corpus: one file per contributor, named by initials, produced with `EXTRACT-LEARNINGS.md`. |
@@ -288,9 +314,8 @@ python vq.py package <dest>
 ```
 
 Twelve files plus `LICENSE` and `learnings/`. **Python 3.6 or later and nothing else** — no third-party packages,
-standard library only. The recipient needs a project folder containing a
-`.mcp.json` with a Vantiq server entry, which is what the MCP integration
-already writes. Nothing is hardcoded to a namespace, a server or a package:
+standard library only. The recipient needs Claude Code connected to Vantiq
+VIA, at any scope. Nothing is hardcoded to a namespace, a server or a package:
 `check` discovers the application package from the namespace itself.
 
 What has actually been verified, stated precisely because this README asks you
@@ -325,6 +350,9 @@ down gets deleted the first time it is inconvenient.
 ## What it does not do
 
 - It does not check anything about the runtime behaviour of your agents.
+- It only uses a token that sits in Claude Code's MCP configuration, as an
+  `Authorization` header on the VIA connection. A connection without one gets an
+  error naming where it looked, never a guess.
 - Of the 224 recorded behaviours, 43 are conventions that cannot be detected
   statically and 105 more have not been triaged. `NOTES.md` lists both honestly
   rather than implying coverage: 76 enforced is a third of them, not most.

@@ -10,7 +10,8 @@
     python vq.py install <project>             copy the files only, no CLAUDE.md
     python vq.py package <dest>                a clean copy to hand to someone else
 
-`<project>` is a folder holding a .mcp.json. The package is discovered from the
+`<project>` is the folder you run Claude Code in, connected to Vantiq VIA at any
+scope: local, the project's .mcp.json, or user. The package is discovered from the
 namespace when omitted, because on a project you did not set up you will not
 know it, and guessing wrong reports a clean sweep of nothing.
 """
@@ -20,7 +21,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from client import Client, VantiqError  # noqa: E402
+from client import (Client, VantiqError, describe_connection,  # noqa: E402
+                    find_connection)
 
 
 def discover_package(client):
@@ -45,10 +47,18 @@ def discover_package(client):
 
 
 def _client(project):
-    if not os.path.exists(os.path.join(project, ".mcp.json")):
-        raise SystemExit("no .mcp.json in %s; this is not a Vantiq project folder"
-                         % project)
-    return Client(repo=project)
+    """A client on the VIA connection Claude Code uses in `project`, announced.
+
+    It always says which connection, because writes land in whatever namespace
+    the token belongs to (DM-21, NR-51), and a clean result read from one
+    namespace says nothing about another.
+    """
+    try:
+        c = Client(repo=project)
+    except VantiqError as exc:
+        raise SystemExit(str(exc))
+    print(describe_connection(c.connection))
+    return c
 
 
 def cmd_check(project, package=None):
@@ -206,8 +216,9 @@ MARK_END = "<!-- vantiq-harness:end -->"
 CLAUDE_SECTION = """%s
 ## Working on this Vantiq project
 
-There is a build harness at `tools/vharness`. Use it rather than rebuilding its
-checks:
+You build here through Vantiq VIA, and VIA reporting success is not evidence
+that what you built works. There is a build harness at `tools/vharness`; use it
+rather than rebuilding its checks:
 
 ```
 python tools/vharness/vq.py check  .            lint what is deployed (read-only)
@@ -221,7 +232,7 @@ text that earned it. Read it before debugging something that "should work":
 most of them are not things a linter can catch, and roughly two thirds have no
 check at all.
 
-**The one thing to carry into any Vantiq work:** a write returns HTTP 200 and
+**The one thing to carry into any Vantiq work:** a write through VIA succeeds and
 the thing can still be broken, somewhere else or later. A clean push does not
 mean the service compiles; `vailErrors: null` on a procedure does not mean its
 service is healthy; and only calling a procedure proves the class assembled.
@@ -255,12 +266,13 @@ def cmd_init(project):
     re-run after an upgrade.
     """
     import io as _io
-    if not os.path.exists(os.path.join(project, ".mcp.json")):
-        print("warning: no .mcp.json in %s" % project)
-        print("  A Vantiq project is a folder holding a .mcp.json with a Vantiq")
-        print("  server entry, which the MCP integration writes. Set that up")
-        print("  first, or `check`/`health`/`push` will have nothing to talk to.")
-        print("")
+    try:
+        print(describe_connection(find_connection(project)))
+    except VantiqError as exc:
+        print("warning: %s" % exc)
+        print("  init will still set the project up, but `check`, `health`, `ops`")
+        print("  and `push` need that connection to read anything back.")
+    print("")
 
     cmd_install(project)
 
@@ -345,8 +357,8 @@ def cmd_package(dest):
     print("  left behind (this repo only): %s" % ", ".join(left))
     print("")
     print("for the recipient:")
-    print("  python vq.py selftest              # 130 assertions, proves the rules hold")
-    print("  python vq.py check <project>       # a folder holding a .mcp.json")
+    print("  python vq.py selftest              # 142 assertions, proves the rules hold")
+    print("  python vq.py check <project>       # a folder where Claude Code uses VIA")
     print("")
     print("Requires Python 3.6+ and nothing else. No third-party packages.")
     return 0

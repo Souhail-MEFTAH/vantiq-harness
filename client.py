@@ -23,6 +23,7 @@ Four things this encodes that cost us time to learn:
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -33,42 +34,188 @@ class VantiqError(RuntimeError):
     pass
 
 
-def creds_from_mcp(repo):
-    """Read server and token from the repo's .mcp.json.
+# Every Vantiq host serves its VIA MCP server at this path. It is the connection
+# Claude Code builds through, and so the one this harness reads back through.
+VIA_PATH = "io.vantiq.via.mcpServer"
 
-    Never returned in a log line or an exception message. Keeping the credential
-    here rather than in tooling is what lets every script in this harness work
-    on any project without hardcoding a namespace.
+_ENV_VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
-    The server entry is usually keyed "vantiq", but that is a convention, not a
-    rule, so any entry whose URL points at a Vantiq host will do. Assuming the
-    key gives a KeyError that reads as "the harness is broken" when the real
-    answer is "your server is called something else".
-    """
-    path = os.path.join(repo, ".mcp.json")
+
+def _load_json(path):
+    """The parsed file, or None when it does not exist."""
     if not os.path.exists(path):
-        raise VantiqError("no .mcp.json in %s" % repo)
-    with open(path, encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    servers = cfg.get("mcpServers") or {}
-    entry = servers.get("vantiq")
-    if entry is None:
-        for name, candidate in servers.items():
-            if "vantiq" in (candidate.get("url") or "").lower() or "vantiq" in name.lower():
-                entry = candidate
-                break
-    if entry is None:
-        raise VantiqError("no Vantiq server in %s (found: %s)"
-                          % (path, ", ".join(servers) or "nothing"))
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except ValueError as exc:
+        raise VantiqError("could not parse %s: %s" % (path, exc))
+
+
+def _same_dir(a, b):
+    """True when two paths name the same directory.
+
+    Claude Code keys local-scope servers in ~/.claude.json by the absolute path
+    of the folder it was started in, written with backslashes on Windows. A
+    project passed as `.`, or with forward slashes, or with a trailing
+    separator, has to be normalised first or its local-scope connection is
+    invisible.
+    """
+    def norm(p):
+        return os.path.normcase(os.path.abspath(p)).replace("\\", "/").rstrip("/")
+    return norm(a) == norm(b)
+
+
+def _expand(value, env, where):
+    """`${VAR}` and `${VAR:-default}`, expanded the way Claude Code expands them.
+
+    A `.mcp.json` committed to a shared repository should not carry a token,
+    and `"Authorization": "Bearer ${VANTIQ_TOKEN}"` is how that is avoided.
+    Without this the harness would send the literal text `${VANTIQ_TOKEN}` as
+    the token, and report a 401 against a connection Claude Code is using
+    successfully in the same folder. An unset variable with no default is an
+    error here, as it is in Claude Code, rather than an empty token.
+    """
+    def sub(m):
+        name, default = m.group(1), m.group(2)
+        if name in env:
+            return env[name]
+        if default is not None:
+            return default
+        raise VantiqError("%s uses ${%s}, which is not set in this environment"
+                          % (where, name))
+    return _ENV_VAR.sub(sub, value)
+
+
+def _pick_vantiq(servers):
+    """(name, entry) for the Vantiq connection in one scope's servers, or None.
+
+    Most certain first: an entry whose URL is the VIA server; an entry named
+    `vantiq`, the conventional key; then any other HTTP entry naming Vantiq,
+    but only if it carries a token. That last condition is not fussiness. The
+    Vantiq Claude Code plugin adds servers of its own (`vantiq-help`,
+    `vantiq-agentic`), and a documentation server with no credential must not
+    stand in front of the VIA connection one scope further down. An entry with
+    no URL is a local process, not a host anything can be read back from.
+    """
+    ranked = []
+    for name, entry in (servers or {}).items():
+        if not isinstance(entry, dict) or not entry.get("url"):
+            continue
+        url = entry["url"]
+        has_token = bool((entry.get("headers") or {}).get("Authorization"))
+        if VIA_PATH in url:
+            rank = 0
+        elif name == "vantiq":
+            rank = 1
+        elif has_token and ("vantiq" in url.lower() or "vantiq" in name.lower()):
+            rank = 2
+        else:
+            continue
+        ranked.append((rank, name, entry))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: (r[0], r[1]))
+    return ranked[0][1], ranked[0][2]
+
+
+def find_connection(project=None, home=None, env=None):
+    """The Vantiq VIA connection Claude Code uses in `project`, found the same way.
+
+    Claude Code can hold that connection at three scopes, and they are read here
+    in its own order of precedence, most specific first:
+
+      local    ~/.claude.json, under the project's path   `claude mcp add`
+      project  <project>/.mcp.json                        shared in the repo
+      user     ~/.claude.json, top level                  `claude mcp add --scope user`
+
+    An earlier version read only the project `.mcp.json`. Every Vantiq project
+    on the machine it was built on happened to be set up that way, but VIA is
+    just as readily added at user scope, and for anyone set up like that every
+    command stopped at "this is not a Vantiq project folder" - while Claude Code
+    was talking to VIA perfectly well in the same folder.
+
+    Returns server, token, scope, name, origin and host, plus `others`: the
+    Vantiq connections found at lower-precedence scopes. Claude Code loads
+    those too when their names differ, and writes land in whatever namespace
+    the token belongs to (DM-21, NR-51), so describe_connection() says so when
+    one points at a different host.
+
+    The token never appears in an exception message, in `others`, or in
+    describe_connection().
+    """
+    project = os.path.abspath(project or os.getcwd())
+    home = home or os.path.expanduser("~")
+    env = os.environ if env is None else env
+
+    user_file = os.path.join(home, ".claude.json")
+    project_file = os.path.join(project, ".mcp.json")
+    user_cfg = _load_json(user_file) or {}
+    project_cfg = _load_json(project_file) or {}
+
+    local_servers = None
+    for key, entry in (user_cfg.get("projects") or {}).items():
+        if _same_dir(key, project):
+            local_servers = (entry or {}).get("mcpServers")
+            break
+
+    found = []
+    for scope, servers, origin in (("local", local_servers, user_file),
+                                   ("project", project_cfg.get("mcpServers"), project_file),
+                                   ("user", user_cfg.get("mcpServers"), user_file)):
+        pick = _pick_vantiq(servers)
+        if pick:
+            found.append((scope, pick[0], pick[1], origin))
+    if not found:
+        raise VantiqError(
+            "no Vantiq VIA connection for %s. Looked where Claude Code looks: "
+            "local scope in %s, the project's %s, and user scope in %s. Connect "
+            "Claude Code to VIA first: https://<your-vantiq-host>/mcp/%s"
+            % (project, user_file, project_file, user_file, VIA_PATH))
+
+    scope, name, entry, origin = found[0]
+    where = "the Vantiq connection '%s' (%s scope, %s)" % (name, scope, origin)
     auth = (entry.get("headers") or {}).get("Authorization")
     if not auth:
-        raise VantiqError("the Vantiq entry in %s carries no Authorization header"
-                          % path)
-    token = auth.split(None, 1)[-1].strip()
-    parts = urllib.parse.urlsplit(entry.get("url") or "")
-    if not parts.scheme:
-        raise VantiqError("the Vantiq entry in %s has no usable url" % path)
-    return "%s://%s" % (parts.scheme, parts.netloc), token
+        raise VantiqError(
+            "%s has no Authorization header, so there is no token for the harness "
+            "to read back with. Add one to that connection; in a shared .mcp.json, "
+            "`Bearer ${VANTIQ_TOKEN}` keeps the token itself out of the repository."
+            % where)
+    token = _expand(auth, env, where).split(None, 1)[-1].strip()
+    parts = urllib.parse.urlsplit(_expand(entry["url"], env, where))
+    if not parts.scheme or not parts.netloc:
+        raise VantiqError("%s has no usable url" % where)
+
+    others = [{"scope": s, "name": n, "host": urllib.parse.urlsplit(e["url"]).netloc}
+              for s, n, e, _o in found[1:]]
+    return {"server": "%s://%s" % (parts.scheme, parts.netloc), "token": token,
+            "scope": scope, "name": name, "origin": origin, "host": parts.netloc,
+            "others": others}
+
+
+def describe_connection(conn):
+    """Which VIA connection is in use, for printing. Never includes the token.
+
+    Adds a note for each other Vantiq connection Claude Code will also load in
+    this folder - a different name at a lower scope - that points at a
+    different host, because a clean result read from one namespace says nothing
+    about the namespace Claude is actually writing to.
+    """
+    lines = ["VIA connection '%s' (%s scope) -> %s"
+             % (conn["name"], conn["scope"], conn["host"])]
+    for o in conn.get("others") or []:
+        if o["name"] != conn["name"] and o["host"] != conn["host"]:
+            lines.append("  note: Claude Code also loads '%s' (%s scope) -> %s "
+                         "in this folder; make sure Claude is writing through "
+                         "the one above." % (o["name"], o["scope"], o["host"]))
+    return "\n".join(lines)
+
+
+def creds_from_mcp(repo):
+    """(server, token) for `repo`, via find_connection. Kept for existing scripts."""
+    conn = find_connection(repo)
+    return conn["server"], conn["token"]
 
 
 def looks_like_error(body):
@@ -226,8 +373,13 @@ def error_text(body):
 
 class Client(object):
     def __init__(self, repo=None, server=None, token=None, timeout=180):
+        # `connection` describes where the credentials came from, without the
+        # token, so callers can say which namespace they are about to touch.
+        self.connection = None
         if token is None:
-            server, token = creds_from_mcp(repo)
+            conn = find_connection(repo)
+            server, token = conn["server"], conn["token"]
+            self.connection = dict((k, v) for k, v in conn.items() if k != "token")
         self.server, self._token, self.timeout = server, token, timeout
         self._namespace = None
 

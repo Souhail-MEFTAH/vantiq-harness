@@ -30,7 +30,7 @@ import re
 import sys
 import urllib.parse
 
-from client import Client, VantiqError
+from client import Client, VantiqError, describe_connection
 from lint import SIG, check_tree
 from source import blank
 
@@ -229,6 +229,10 @@ def run(repo, package, proc_dir=None, only=None, allow_drift=False):
     proc_dir = proc_dir or os.path.join(repo, "src", "procedures")
     client = Client(repo=repo)
     print("push %s -> %s" % (os.path.relpath(proc_dir, repo), client.server))
+    # A push WRITES, so this is where naming the connection matters most: it
+    # lands in whatever namespace the token belongs to (DM-21, NR-51).
+    if client.connection:
+        print(describe_connection(client.connection))
 
     # 1. lint
     findings = check_tree(proc_dir)

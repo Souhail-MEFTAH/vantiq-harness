@@ -938,6 +938,133 @@ def tree_cases():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def connection_cases():
+    """The VIA connection is found where Claude Code finds it, and nowhere else.
+
+    Every case builds a throwaway home directory and project, so nothing here
+    reads the real ~/.claude.json or the real environment.
+    """
+    import json as _json
+    import shutil
+    import tempfile
+    from client import VantiqError, describe_connection, find_connection
+    root = tempfile.mkdtemp()
+    via = "https://%s/mcp/io.vantiq.via.mcpServer"
+
+    def entry(host, token="fake-token"):
+        e = {"type": "http", "url": via % host}
+        if token is not None:
+            e["headers"] = {"Authorization": "Bearer " + token}
+        return e
+
+    def setup(user=None, local=None, project=None, local_key=None):
+        case = tempfile.mkdtemp(dir=root)
+        home, proj = os.path.join(case, "home"), os.path.join(case, "proj")
+        os.makedirs(home)
+        os.makedirs(proj)
+        cfg = {}
+        if user is not None:
+            cfg["mcpServers"] = user
+        if local is not None:
+            cfg["projects"] = {(local_key or (lambda d: d))(proj): {"mcpServers": local}}
+        if cfg:
+            io.open(os.path.join(home, ".claude.json"), "w",
+                    encoding="utf-8").write(_json.dumps(cfg))
+        if project is not None:
+            io.open(os.path.join(proj, ".mcp.json"), "w",
+                    encoding="utf-8").write(_json.dumps({"mcpServers": project}))
+        return proj, home
+
+    def find(proj, home, env=None):
+        return find_connection(proj, home=home, env=env or {})
+
+    def error(proj, home, env=None):
+        try:
+            find(proj, home, env)
+        except VantiqError as exc:
+            return str(exc)
+        return None
+
+    out = []
+    try:
+        p, h = setup(project={"vantiq": entry("dev.vantiq.com")})
+        c = find(p, h)
+        out.append(("a project .mcp.json connection is found",
+                    c["scope"] == "project" and c["server"] == "https://dev.vantiq.com"))
+
+        # The case that stopped every command: VIA at user scope, no .mcp.json.
+        p, h = setup(user={"vantiqVia": entry("test.vantiq.com")})
+        c = find(p, h)
+        out.append(("a user-scope VIA connection is found with no .mcp.json",
+                    c["scope"] == "user" and c["host"] == "test.vantiq.com"))
+
+        # Local scope is keyed by path; written here with the other separator
+        # and a trailing one, which must still match.
+        p, h = setup(local={"vantiq": entry("local.vantiq.com")},
+                     project={"vantiq": entry("dev.vantiq.com")},
+                     user={"vantiqVia": entry("test.vantiq.com")},
+                     local_key=lambda d: d.replace("\\", "/") + "/")
+        c = find(p, h)
+        out.append(("precedence is local, then project, then user",
+                    c["scope"] == "local" and [o["scope"] for o in c["others"]]
+                    == ["project", "user"]))
+
+        p, h = setup(project={"vantiq": entry("dev.vantiq.com")},
+                     user={"vantiqVia": entry("test.vantiq.com")})
+        text = describe_connection(find(p, h))
+        out.append(("a second connection to a different host is called out",
+                    "note:" in text and "test.vantiq.com" in text))
+        p, h = setup(project={"vantiq": entry("test.vantiq.com")},
+                     user={"vantiqVia": entry("test.vantiq.com")})
+        out.append(("a second connection to the same host is not",
+                    "note:" not in describe_connection(find(p, h))))
+
+        # The Vantiq plugin's own servers, and unrelated ones, are not VIA.
+        p, h = setup(project={"vantiq-help": {"type": "stdio", "command": "npx"},
+                              "vantiq-docs": {"type": "http",
+                                              "url": "https://docs.vantiq.com/mcp"},
+                              "github": {"type": "http",
+                                         "url": "https://api.githubcopilot.com/mcp/",
+                                         "headers": {"Authorization": "Bearer x"}}},
+                     user={"vantiqVia": entry("test.vantiq.com")})
+        out.append(("plugin, docs and unrelated servers do not stand in front of VIA",
+                    find(p, h)["scope"] == "user"))
+
+        p, h = setup(project={"vantiq": {
+            "type": "http",
+            "url": "https://${VANTIQ_HOST:-dev.vantiq.com}/mcp/io.vantiq.via.mcpServer",
+            "headers": {"Authorization": "Bearer ${VANTIQ_TOKEN}"}}})
+        c = find(p, h, env={"VANTIQ_TOKEN": "from-env"})
+        out.append(("${VAR} and ${VAR:-default} expand as Claude Code expands them",
+                    c["token"] == "from-env" and c["host"] == "dev.vantiq.com"))
+        e = error(p, h, env={})
+        out.append(("an unset ${VAR} is refused, never sent as a literal token",
+                    bool(e) and "VANTIQ_TOKEN" in e))
+
+        p, h = setup(project={"vantiq": entry("dev.vantiq.com", token=None)})
+        e = error(p, h)
+        out.append(("a VIA connection with no token is refused with the reason",
+                    bool(e) and "Authorization" in e))
+
+        p, h = setup()
+        e = error(p, h)
+        out.append(("with no connection anywhere, every place looked is named",
+                    bool(e) and ".mcp.json" in e and ".claude.json" in e))
+
+        p, h = setup(project={"vantiq": {
+            "type": "http", "url": "not-a-url-io.vantiq.via.mcpServer",
+            "headers": {"Authorization": "Bearer fake-secret-value"}}})
+        e = error(p, h)
+        out.append(("an error about a connection never contains its token",
+                    bool(e) and "fake-secret-value" not in e))
+        p, h = setup(project={"vantiq": entry("dev.vantiq.com", token="fake-secret-value")})
+        out.append(("describe_connection never contains the token",
+                    "fake-secret-value" not in describe_connection(find(p, h))))
+        return out
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def copy_cases():
     """Every copy the harness makes carries its LICENSE.
 
@@ -995,6 +1122,7 @@ def main():
         print("  %s %s" % ("ok  " if ok else "FAIL", name))
 
     for label, fn in (("tree layouts", tree_cases),
+                      ("VIA connection", connection_cases),
                       ("copies", copy_cases),
                       ("REST traps", client_cases),
                       ("scheduled events", ops_cases),
