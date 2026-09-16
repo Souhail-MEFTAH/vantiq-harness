@@ -200,7 +200,7 @@ def dead_schedules(client, events):
 
     A scheduled event only publishes its `message` to its `topic`; it cannot
     invoke a procedure. With no rule listening, it fires forever, costs what
-    note 40 says it costs once per cluster node, and does nothing at all. The
+    SC-40 says it costs once per cluster node, and does nothing at all. The
     record itself reads healthy, which is why this needs a cross-check rather
     than an inspection.
 

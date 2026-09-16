@@ -36,7 +36,7 @@ PRIVATE_SIG = re.compile(
 class Finding(object):
     def __init__(self, rule, line, message, snippet="", note=None):
         self.rule, self.line, self.message, self.snippet = rule, line, message, snippet
-        # Which entry in docs/platform-notes.md earned this rule. A guard whose
+        # Which NOTES.md id earned this rule, e.g. SC-A06. A guard whose
         # reason is not written down gets deleted the first time it is
         # inconvenient, and every one of these was paid for once already.
         self.note = note
@@ -75,7 +75,7 @@ def rule_indented_return(text, code, ctx):
                            "return inside an %s block at procedure level; VAIL falls "
                            "through it. Rewrite as if/else with one trailing "
                            "return." % opener,
-                           line_text(text, m.start()), note=1))
+                           line_text(text, m.start()), note="SC-A01"))
     return out
 
 
@@ -118,7 +118,7 @@ def rule_groovy_it(text, code, ctx):
                            "a variable named `it` collides with Groovy's implicit "
                            "closure parameter and breaks the whole service; "
                            "vailErrors will not catch it.",
-                           line_text(text, m.start()), note=26))
+                           line_text(text, m.start()), note="SC-26"))
     return out
 
 
@@ -136,7 +136,7 @@ def rule_groovy_it(text, code, ctx):
 
 # Statement keywords. Using one as a variable name is a parse error at the USE
 # site, not the declaration, and the reported position points at the blank line
-# before it. Note 2 and 3.
+# before it. SC-A02 and SC-A03 in NOTES.md.
 #
 # `match` joins them from NR-06, and the failure is not a parse error at all:
 # `var match = ""` then `match.length()` bound as a procedure PATH - "The
@@ -187,7 +187,7 @@ def rule_reserved_var(text, code, ctx):
                            "`%s` is a statement keyword; as a variable name it breaks "
                            "the parser at its use site with an error pointing at the "
                            "wrong line." % m.group(1),
-                           line_text(text, m.start()), note=2))
+                           line_text(text, m.start()), note="SC-A02"))
     for name, offset in _params(code):
         if name in RESERVED or name in RESERVED_PARAM:
             out.append(Finding("reserved-var", line_of(text, offset),
@@ -195,7 +195,7 @@ def rule_reserved_var(text, code, ctx):
                                "rejects the declaration ("
                                "\"illegal parameter name\") and validateVAIL does "
                                "not catch it." % name,
-                               line_text(text, offset), note=2))
+                               line_text(text, offset), note="SC-A02"))
     return out
 
 
@@ -251,7 +251,7 @@ def rule_while_loop(text, code, ctx):
         out.append(Finding("while-loop", line_of(text, m.start()),
                            "VAIL has no while loop; the parser reads the block as an "
                            "object literal and blames an unrelated line.",
-                           line_text(text, m.start()), note=7))
+                           line_text(text, m.start()), note="SC-A06"))
     return out
 
 
@@ -267,7 +267,7 @@ def rule_sort_closure(text, code, ctx):
         out.append(Finding("sort-closure", line_of(text, m.start()),
                            "sort() takes a field name in quotes, not a closure; `->` "
                            "parses as a minus.",
-                           line_text(text, m.start()), note=18))
+                           line_text(text, m.start()), note="SC-18"))
     return out
 
 
@@ -283,7 +283,7 @@ def rule_map_keys(text, code, ctx):
         out.append(Finding("map-keys", line_of(text, m.start()),
                            "a map is a Groovy LinkedHashMap: use keySet(). keys() "
                            "compiles and throws at call time.",
-                           line_text(text, m.start()), note=19))
+                           line_text(text, m.start()), note="SC-19"))
     return out
 
 
@@ -303,7 +303,7 @@ def rule_date_call(text, code, ctx):
     for m in re.finditer(r"(?<![\w.])date\s*\(\s*\)", code):
         out.append(Finding("date-call", line_of(text, m.start()),
                            "`date()` returns a String; the parser is `toDate()`.",
-                           line_text(text, m.start()), note=10))
+                           line_text(text, m.start()), note="SC-A09"))
     for m in re.finditer(r"(?<![\w.])date\s*\(", text):
         # the raw text here, because the argument being a STRING is the signal
         j = m.end()
@@ -322,7 +322,7 @@ def rule_date_call(text, code, ctx):
             out.append(Finding("date-call", line_of(text, m.start()),
                                "`date(<string>)` returns a String and fails much later "
                                "somewhere else; the parser is `toDate()`.",
-                               line_text(text, m.start()), note=10))
+                               line_text(text, m.start()), note="SC-A09"))
     return out
 
 
@@ -337,7 +337,7 @@ def rule_delete_without_where(text, code, ctx):
         out.append(Finding("delete-no-where", line_of(text, m.start()),
                            "DELETE requires a WHERE clause; use "
                            "`WHERE ars_createdAt != null` to mean all.",
-                           line_text(text, m.start()), note=9))
+                           line_text(text, m.start()), note="SC-A08"))
     return out
 
 

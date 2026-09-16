@@ -238,7 +238,7 @@ mean the service compiles; `vailErrors: null` on a procedure does not mean its
 service is healthy; and only calling a procedure proves the class assembled.
 Verify by read-back and by execution, never by a status code.
 %s
-""" % (MARK_BEGIN, 224, MARK_END)
+""" % (MARK_BEGIN, 223, MARK_END)
 
 
 def _behaviour_count():
@@ -278,8 +278,8 @@ def cmd_init(project):
 
     count = _behaviour_count()
     section = CLAUDE_SECTION
-    if count and count != 224:
-        section = section.replace("records 224 platform", "records %d platform" % count)
+    if count and count != 223:
+        section = section.replace("records 223 platform", "records %d platform" % count)
 
     path = os.path.join(project, "CLAUDE.md")
     existing = ""
@@ -333,7 +333,7 @@ def cmd_package(dest):
     write a truncated file, which is right for a maintainer and unhelpful in a
     copy.
 
-    NOTES.md itself ships, because the 224 recorded behaviours are the most
+    NOTES.md itself ships, because the 223 recorded behaviours are the most
     portable thing here, and so does learnings/, because every rule taken from
     the pooled corpus cites an entry id and the recipient needs to be able to
     read the entry.

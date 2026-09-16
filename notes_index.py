@@ -39,11 +39,28 @@ def _find(*parts):
     return os.path.join(ROOT_CANDIDATES[0], *parts)
 
 
+# Every learning gets an id, and the id carries the source's own number wherever
+# the source has one, because other things cite those numbers: the lint rules'
+# `note=` field, docstrings, and the titles themselves ("note 35 was 3x low").
+#
+#   SC-18 .. SC-47   Supply Chain platform notes, numbered as that document
+#                    numbers them.
+#   SC-A01 ..        The notes that document records BEFORE its numbering
+#                    begins - it calls them additions - in document order. They
+#                    cannot be SC-01 onward: there are eighteen of them and the
+#                    numbered series starts at 18.
+#   DF-01 .. DF-24   The Defense defect log, section 13; DF-03 is its 13.3.
+#
+# Before this, those numbers were left inside the titles ("18. `sort()` takes
+# a field NAME"), so the tables read 18, 19, 20, 23, 26 beside rows with no
+# number at all, and "13.3" beside both. The pattern for the platform notes
+# also matched the document's own title line, which was indexed as learning
+# number 224. Only second-level headings are notes.
 SOURCES = [
     ("platform", _find("Supply Chain Mgt", "docs", "platform-notes.md"),
-     r"^#{1,4}\s*(.+)$"),
+     r"^##(?!#)\s*(.+)$", "SC"),
     ("defense", _find("Defense", "README.md"),
-     r"^#{2,5}\s*(13\.\d+\s+.+)$"),
+     r"^#{2,5}\s*(13\.\d+\s+.+)$", "DF"),
 ]
 
 # note key -> (what enforces it, where)
@@ -65,13 +82,13 @@ COVERAGE = {
     "hides from a filter":               ("client", "procedures() filters on serviceName"),
     "ars_dontExport` persists":          ("publish", "export policy follows the credential"),
     "ways an export lies":               ("publish", "verify by read-back"),
-    "13.3":                              ("uilint", "hardcoded-endpoint"),
-    "13.9":                              ("uilint", "swallowed-refusal"),
-    "13.19":                             ("uilint", "grid-min-width"),
-    "13.22":                             ("lint + uilint", "mojibake"),
-    "13.15":                             ("convention", "replay must not reproduce uuid()"),
-    "13.20":                             ("convention", "a derived measure must not go negative"),
-    "13.13":                             ("convention", "a race that survives its own fix"),
+    "DF-03":                             ("uilint", "hardcoded-endpoint"),
+    "DF-09":                             ("uilint", "swallowed-refusal"),
+    "DF-19":                             ("uilint", "grid-min-width"),
+    "DF-22":                             ("lint + uilint", "mojibake"),
+    "DF-15":                             ("convention", "replay must not reproduce uuid()"),
+    "DF-20":                             ("convention", "a derived measure must not go negative"),
+    "DF-13":                             ("convention", "a race that survives its own fix"),
     "sort()` throws on an empty array":  ("convention", "guard every sort and slice"),
     "similaritySearch":                  ("convention", "positional signature"),
     "confidence floor":                  ("convention", "retrieval needs a floor"),
@@ -210,26 +227,63 @@ def redact(title):
     return title
 
 
-def classify(title):
+_ID = re.compile(r"^[A-Z]{2}-")
+
+
+def classify(ident, title):
+    """(where, what) for one learning. An id key must match exactly, because a
+    substring match would let DF-1 claim DF-13; any other key is a phrase from
+    the title."""
+    if ident in COVERAGE:
+        return COVERAGE[ident]
     for key, (where, what) in COVERAGE.items():
-        if key.lower() in title.lower():
+        if not _ID.match(key) and key.lower() in title.lower():
             return where, what
     return None, None
 
 
+def _ident(prefix, title, unnumbered):
+    """(id, title without its number) for one heading. See SOURCES."""
+    if prefix == "SC":
+        m = re.match(r"^(\d+)\.\s+(.+)$", title)
+        if m:
+            ident, title = "SC-%02d" % int(m.group(1)), m.group(2)
+        else:
+            unnumbered[0] += 1
+            ident = "SC-A%02d" % unnumbered[0]
+        # A title that cites another note by number now cites its id, so the
+        # reference resolves on the page it is read on.
+        title = re.sub(r"\bnote (\d+)\b",
+                       lambda n: "SC-%02d" % int(n.group(1)), title)
+        return ident, title
+    m = re.match(r"^13\.(\d+)\s+(.+)$", title)
+    return "DF-%02d" % int(m.group(1)), m.group(2)
+
+
+def id_key(ident):
+    """Sort order: SC then DF then the pooled prefixes; within SC the unnumbered
+    additions first, as they come first in their document; then by number."""
+    prefix, _, rest = ident.partition("-")
+    order = {"SC": 0, "DF": 1}.get(prefix, 2)
+    batch = 0 if rest[:1].isalpha() else 1
+    return (order, prefix, batch, int(re.sub(r"\D", "", rest) or 0))
+
+
 def collect():
+    """Every demo-series learning, as (source, id, title, where, what)."""
     rows = []
-    for label, path, pattern in SOURCES:
+    for label, path, pattern, prefix in SOURCES:
         if not os.path.exists(path):
             continue
         text = io.open(path, encoding="utf-8", errors="replace").read()
+        unnumbered = [0]
         for title in re.findall(pattern, text, re.M):
             title = title.strip()
             if len(title) < 6:
                 continue
-            title = redact(title)
-            where, what = classify(title)
-            rows.append((label, title, where, what))
+            ident, title = _ident(prefix, redact(title), unnumbered)
+            where, what = classify(ident, title)
+            rows.append((label, ident, title, where, what))
     return rows
 
 
@@ -269,7 +323,7 @@ def build():
     # NOTES.md ships as a generated artifact, so anyone who receives this
     # harness gets the content. Only someone with the original demo series can
     # REGENERATE the SOURCES half, and running this without those documents
-    # would silently replace 73 learnings with a shorter file. Refuse instead.
+    # would silently replace its learnings with a shorter file. Refuse instead.
     # The pooled half ships in learnings/, but rebuilding still needs both.
     if not rows:
         raise SystemExit(
@@ -278,9 +332,11 @@ def build():
             "the shipped copy: keep it. To add a learning of your own, open a\n"
             "pull request adding VANTIQ-LEARNINGS-<initials>.md to learnings/\n"
             "(see EXTRACT-LEARNINGS.md); NOTES.md is regenerated on merge.")
-    enforced = [r for r in rows if r[2] and r[2] != "convention"]
-    convention = [r for r in rows if r[2] == "convention"]
-    uncovered = [r for r in rows if not r[2]]
+    enforced = sorted((r for r in rows if r[3] and r[3] != "convention"),
+                      key=lambda r: id_key(r[1]))
+    convention = sorted((r for r in rows if r[3] == "convention"),
+                        key=lambda r: id_key(r[1]))
+    uncovered = sorted((r for r in rows if not r[3]), key=lambda r: id_key(r[1]))
 
     p_enforced = [r for r in pooled if r[3] and r[3] != "convention"]
     p_convention = [r for r in pooled if r[3] == "convention"]
@@ -304,44 +360,52 @@ def build():
     out.append("| not yet triaged | %d | %d | %d |\n"
                % (len(uncovered), len(p_uncovered),
                   len(uncovered) + len(p_uncovered)))
+    out.append("\nEvery row has an id. `SC-` ids are the Supply Chain demo's "
+               "platform notes: `SC-18` to `SC-47` keep that document's own "
+               "numbers, and the notes it records before its numbering begins "
+               "are `SC-A01` onward, in document order. `DF-` ids are the Defense "
+               "demo's defect log, section 13, so `DF-03` is its 13.3. Those two "
+               "documents live with the demo series and are not published here.")
     if authors:
-        out.append("\nPooled entries come from %s (`learnings/`), each produced "
-                   "independently with the prompt in `EXTRACT-LEARNINGS.md`. "
-                   "The id in each row is the entry, where the evidence and its "
-                   "provenance live.\n" % ", ".join(authors))
+        out.append(" %s ids are the pooled corpus, each produced independently "
+                   "with the prompt in `EXTRACT-LEARNINGS.md`; look any of them up "
+                   "in `learnings/`, where the evidence and its provenance live."
+                   % ", ".join("`%s-`" % a for a in authors))
+    out.append("\n")
 
     out.append("\n## Enforced\n\n")
-    out.append("| Learning | Layer | Check |\n|---|---|---|\n")
-    for _l, title, where, what in enforced:
-        out.append("| %s | `%s` | `%s` |\n" % (title.replace("|", "/")[:96], where, what))
+    out.append("| id | Learning | Layer | Check |\n|---|---|---|---|\n")
+    for _l, ident, title, where, what in enforced:
+        out.append("| %s | %s | `%s` | `%s` |\n"
+                   % (ident, title.replace("|", "/")[:92], where, what))
 
     out.append("\n## Convention only\n\n")
     out.append("These cannot be detected statically. They belong in the scaffold, "
                "in review, or in a comment next to the code they govern.\n\n")
-    out.append("| Learning | What to do |\n|---|---|\n")
-    for _l, title, _w, what in convention:
-        out.append("| %s | %s |\n" % (title.replace("|", "/")[:96], what))
+    out.append("| id | Learning | What to do |\n|---|---|---|\n")
+    for _l, ident, title, _w, what in convention:
+        out.append("| %s | %s | %s |\n" % (ident, title.replace("|", "/")[:92], what))
 
     if p_enforced:
         out.append("\n## Enforced, from the pooled corpus\n\n")
         out.append("| id | Learning | Layer | Check |\n|---|---|---|---|\n")
-        for _a, ident, title, where, what in sorted(p_enforced, key=lambda r: r[1]):
+        for _a, ident, title, where, what in sorted(p_enforced, key=lambda r: id_key(r[1])):
             out.append("| %s | %s | `%s` | `%s` |\n"
                        % (ident, title.replace("|", "/")[:92], where, what))
 
     if p_convention:
         out.append("\n## Convention only, from the pooled corpus\n\n")
         out.append("| id | Learning | What to do |\n|---|---|---|\n")
-        for _a, ident, title, _w, what in sorted(p_convention, key=lambda r: r[1]):
+        for _a, ident, title, _w, what in sorted(p_convention, key=lambda r: id_key(r[1])):
             out.append("| %s | %s | %s |\n"
                        % (ident, title.replace("|", "/")[:92], what))
 
     out.append("\n## Not yet triaged\n\n")
     out.append("Recorded, but nobody has decided whether it is checkable. This "
                "list existing is the point: it shrinks or it explains itself.\n\n")
-    for _l, title, _w, _x in uncovered:
-        out.append("- %s\n" % title.replace("|", "/")[:110])
-    for _a, ident, title, _w, _x in sorted(p_uncovered, key=lambda r: r[1]):
+    for _l, ident, title, _w, _x in uncovered:
+        out.append("- %s %s\n" % (ident, title.replace("|", "/")[:104]))
+    for _a, ident, title, _w, _x in sorted(p_uncovered, key=lambda r: id_key(r[1])):
         out.append("- %s %s\n" % (ident, title.replace("|", "/")[:106]))
 
     text = "".join(out)

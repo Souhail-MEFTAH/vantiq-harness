@@ -21,7 +21,7 @@ TOKEN_SHAPE = re.compile(r"(?<![A-Za-z0-9_\-])[A-Za-z0-9_\-]{43}=(?![A-Za-z0-9_\
 def rule_hardcoded_endpoint(text):
     """A console pointed at the namespace it was imported FROM.
 
-    Defense 13.3: the UI document carried a config block naming an absolute host
+    DF-03 (Defense 13.3): the UI document carried a config block naming an absolute host
     and a token, and it survived the namespace import. Every query went to the
     old server with the old token and returned 401. The screens rendered their
     empty states, so it presented as "the demo has no data" while the namespace
@@ -67,7 +67,7 @@ def rule_source_carries_token(text):
 def rule_swallowed_refusal(text):
     """A fetch whose non-ok response is never surfaced.
 
-    Defense 13.9: access control refused every approve, deny and delegate click.
+    DF-09 (Defense 13.9): access control refused every approve, deny and delegate click.
     The request stayed pending, the refusal counter incremented, and the operator
     saw a success toast and no change. The control was working exactly as
     designed and the console said the opposite.
@@ -89,7 +89,7 @@ def rule_swallowed_refusal(text):
 def rule_grid_min_width(text):
     """A grid whose implicit column sizes to its widest min-content.
 
-    Defense 13.19: `#app` was a grid with no declared column, and every child
+    DF-19 (Defense 13.19): `#app` was a grid with no declared column, and every child
     carried the default `min-width: auto`. The header's 1796px min-content set
     the column, the body stretched to match, and `overflow-x: hidden` on body cut
     up to 40% of the console away with no scrollbar to recover it.

@@ -16,8 +16,8 @@ It was assembled from what seven flagship demos built with Claude Code on VIA co
 us to learn, and from what four professional-services developers found when they
 audited their own Claude Code sessions for the same thing.
 
-**224 recorded behaviours, 76 of them enforced by a check.** See `NOTES.md`,
-which is generated and lists the other 148 honestly rather than implying
+**223 recorded behaviours, 76 of them enforced by a check.** See `NOTES.md`,
+which is generated and lists the other 147 honestly rather than implying
 coverage.
 
 > Not an official Vantiq release, and not endorsed by or affiliated with Vantiq
@@ -121,7 +121,7 @@ yourself.
 
 ### 2. Read `NOTES.md`. Install nothing.
 
-224 behaviours, each with the error text that earned it. This is the highest
+223 behaviours, each with an id and the error text that earned it. This is the highest
 value per minute in the repo and it costs one browser tab. Most of what it
 records is not something a linter can catch - it is the afternoon you would
 otherwise spend finding out why a rule that compiles never fires.
@@ -327,7 +327,7 @@ disk, not yet re-run against a live namespace.
 
 **What is deliberately left behind.** `notes_index.py` rebuilds `NOTES.md` from
 documents only the maintainer has, and refuses rather than write a truncated
-file. `NOTES.md` itself ships, because the 224 recorded behaviours are the most
+file. `NOTES.md` itself ships, because the 223 recorded behaviours are the most
 portable thing here, and so does `learnings/`, so every entry id a rule cites
 can be looked up.
 
@@ -343,7 +343,7 @@ shipped. Shipping a style rule as though it were a correctness rule is how a
 shared tool earns a reputation for noise.
 
 **What a recipient should change.** The rule docstrings cite incidents from this
-team's projects ("Defense 13.3", "note 26"). Those are provenance, not
+team's projects ("DF-03", "SC-26"), which are ids in `NOTES.md`. Those are provenance, not
 instructions, and they are worth keeping: a guard whose reason is not written
 down gets deleted the first time it is inconvenient.
 
@@ -353,8 +353,8 @@ down gets deleted the first time it is inconvenient.
 - It only uses a token that sits in Claude Code's MCP configuration, as an
   `Authorization` header on the VIA connection. A connection without one gets an
   error naming where it looked, never a guess.
-- Of the 224 recorded behaviours, 43 are conventions that cannot be detected
-  statically and 105 more have not been triaged. `NOTES.md` lists both honestly
+- Of the 223 recorded behaviours, 43 are conventions that cannot be detected
+  statically and 104 more have not been triaged. `NOTES.md` lists both honestly
   rather than implying coverage: 76 enforced is a third of them, not most.
 - `opscheck` measures; it does not tune. The levers are a judgement call.
 - The network-facing additions of September 2026 — `Client.namespace()` and
